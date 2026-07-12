@@ -1,6 +1,6 @@
 {
-  "name": "Satisfaction Usager - Centres de Santé",
-  "short_name": "Satisfaction CS",
+  "name": "MOUREDE & ASSOCIES - Enquête de Satisfaction des Usagers",
+  "short_name": "MOUREDE",
   "description": "Enquête de satisfaction des usagers - fonctionne hors-ligne",
   "start_url": "./index.html",
   "display": "standalone",
