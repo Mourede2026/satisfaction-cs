@@ -48,6 +48,12 @@ function doPost(e) {
     else if (action === "submitFacture") out = handleSubmitFacture(d);
     else if (action === "matchFactureCode") out = handleMatchFactureCode(d.text);
     else if (action === "getAttestation") out = handleGetAttestation(d);
+    else if (action === "suiviList") out = handleSuiviList(d.token);
+    else if (action === "suiviGet") out = handleSuiviGet(d.token, d.actId);
+    else if (action === "suiviConfig") out = handleSuiviConfig(d.token, d.actId);
+    else if (action === "suiviSave") out = handleSuiviSave(d.token, d.actId, d.cfg);
+    else if (action === "createSupervisor") out = handleCreateSupervisor(d.token, d.username, d.label, body.password);
+    else if (action === "setSupervisorPassword") out = handleSetSupervisorPassword(d.token, d.username, body.password);
     else if (action === "listEnqueteurs") out = handleListEnqueteurs(d.token);
     else if (action === "getFacture") out = handleGetFacture(d.token, d.id);
     else if (action === "setAttestationValide") out = handleSetAttestationValide(d.token, d.ids, d.valide);
@@ -1234,4 +1240,209 @@ function handleSaveAttestParams(token, p) {
     sh.getRange(ex ? ex.row : sh.getLastRow() + 1, 1, 1, ATT_HEADERS.length).setNumberFormat('@').setValues([row]);
     return { ok: true };
   } finally { lock.releaseLock(); }
+}
+
+/* ---------- Suivi de la collecte : superviseurs d'activité, objectifs par enquêteur, effectif du personnel ---------- */
+// Feuilles : Affectations (superviseur ↔ activité), Objectifs (par activité, enquêteur et formulaire), Effectifs (personnel par structure).
+// Compte « superviseur d'activité » (niveau superviseur_act) : ne voit QUE le suivi des activités qui lui sont affectées.
+var SUP_LEVEL = 'superviseur_act';
+var AFF_SHEET = 'Affectations', AFF_HEADERS = ['IdActivité', 'Superviseur'];
+var OBJ_SHEET = 'Objectifs', OBJ_HEADERS = ['IdActivité', 'Enquêteur', 'Cible', 'Objectif'];
+var EFF_SHEET = 'Effectifs', EFF_HEADERS = ['IdActivité', 'Structure', 'Effectif'];
+var SUIVI_FORMS = { usagers: 'Usagers', cogecs: 'COGECS', communaute: 'Communauté' };
+var SUIVI_MAXDAYS = 400;
+
+function setupSuivi() { tsheet_(AFF_SHEET, AFF_HEADERS); tsheet_(OBJ_SHEET, OBJ_HEADERS); tsheet_(EFF_SHEET, EFF_HEADERS); Logger.log('Feuilles Affectations, Objectifs et Effectifs prêtes.'); }
+
+function suiviRows_(name, headers) { var sh = tsheet_(name, headers); return rowsOf_(sh, headers.length); }
+function suiviReplace_(name, headers, actId, newRows) {
+  var sh = tsheet_(name, headers), keep = suiviRows_(name, headers).filter(function (r) { return String(r.v[0]) !== String(actId); }).map(function (r) { return r.v; });
+  var all = keep.concat(newRows), last = sh.getLastRow();
+  if (last > 1) sh.getRange(2, 1, last - 1, headers.length).clearContent();
+  if (all.length) sh.getRange(2, 1, all.length, headers.length).setNumberFormat('@').setValues(all);
+}
+function actById_(id) { var f = null; activitiesRows_().forEach(function (a) { if (a.id === String(id)) f = a; }); return f; }
+function assignedTo_(user) { var o = {}; suiviRows_(AFF_SHEET, AFF_HEADERS).forEach(function (r) { if (String(r.v[1]) === String(user)) o[String(r.v[0])] = 1; }); return o; }
+
+/** Accès au suivi : administrateur (tout) ou superviseur d'activité (activités affectées seulement). */
+function suiviAccess_(token, actId) {
+  var s = token ? findSession_(token) : null;
+  if (!s) return { ok: false, error: 'Session invalide ou expirée, reconnectez-vous.' };
+  var a = findAccountRow_(s.username);
+  if (!a || a.data[8] === 'NON') return { ok: false, error: 'Compte désactivé ou introuvable.' };
+  var lvl = String(a.data[2]);
+  if (lvl === 'admin') return { ok: true, admin: true, user: s.username, label: String(a.data[6] || s.username) };
+  if (lvl === SUP_LEVEL) {
+    if (actId && !assignedTo_(s.username)[String(actId)]) return { ok: false, error: "Cette activité ne vous est pas affectée." };
+    return { ok: true, admin: false, user: s.username, label: String(a.data[6] || s.username) };
+  }
+  return { ok: false, error: "Accès réservé à l'administrateur et aux superviseurs d'activité." };
+}
+function actSummary_(a) { return { id: a.id, name: a.name, level: a.level, cible: a.cible, debut: a.debut, fin: a.fin, forms: a.forms, active: a.active }; }
+function handleSuiviList(token) {
+  var c = suiviAccess_(token, ''); if (!c.ok) return c;
+  var mine = c.admin ? null : assignedTo_(c.user);
+  var list = activitiesRows_().filter(function (a) { return !mine || mine[a.id]; }).map(actSummary_);
+  list.sort(function (x, y) { return (x.debut || '') < (y.debut || '') ? 1 : (x.debut || '') > (y.debut || '') ? -1 : 0; });
+  return { ok: true, admin: c.admin, user: c.user, label: c.label, activities: list };
+}
+function daysBetween_(a, b) { // nombre de jours entre deux dates yyyy-MM-dd (b - a)
+  var x = String(a).match(/^(\d{4})-(\d{2})-(\d{2})$/), y = String(b).match(/^(\d{4})-(\d{2})-(\d{2})$/); if (!x || !y) return 0;
+  return Math.round((Date.UTC(+y[1], +y[2] - 1, +y[3]) - Date.UTC(+x[1], +x[2] - 1, +x[3])) / 86400000);
+}
+function enqColumn_(hm) { var names = ["Identification de l'enquêteur", 'Enqueteur', 'Enquêteur', 'enqueteur']; for (var i = 0; i < names.length; i++) if (hm[names[i]]) return names[i]; return ''; }
+
+/** Calcule tout le suivi d'une activité : réalisé par enquêteur et par jour, objectifs, attendu, personnel. */
+function suiviCompute_(act) {
+  var today = day_(new Date()), ss = SpreadsheetApp.getActiveSpreadsheet();
+  var srcs = (act.level === 'hopital' ? [['usagers', SHEET_USAGERS_H], ['communaute', SHEET_COMMUNAUTE_H]] : [['usagers', SHEET_USAGERS], ['cogecs', SHEET_COGECS]])
+    .filter(function (x) { return !act.forms.length || act.forms.indexOf(x[0]) > -1; });
+  var enq = {}, order = [], allDays = {};
+  function getE_(name) {
+    name = String(name || '').replace(/\s+/g, ' ').trim() || 'Non renseigné'; var k = strip_(name) || 'non renseigne';
+    if (!enq[k]) { enq[k] = { key: k, name: name, byForm: {}, daily: {}, objByForm: {} }; order.push(k); }
+    return enq[k];
+  }
+  srcs.forEach(function (sr) {
+    var sh = ss.getSheetByName(sr[1]); if (!sh || sh.getLastRow() < 2) return;
+    var hm = buildHeaderMap_(sh).map; if (!hm[ACT_ID_COL]) return;
+    var ids = readColumn_(sh, hm, ACT_ID_COL), ec = enqColumn_(hm), names = ec ? readColumn_(sh, hm, ec) : [], days = rowDays_(sh, hm);
+    for (var i = 0; i < ids.length; i++) {
+      if (String(ids[i]) !== act.id) continue;
+      var e = getE_(names[i]), d = days[i] || '';
+      e.byForm[sr[0]] = (e.byForm[sr[0]] || 0) + 1;
+      if (d) { e.daily[d] = (e.daily[d] || 0) + 1; allDays[d] = 1; }
+    }
+  });
+  // objectifs
+  suiviRows_(OBJ_SHEET, OBJ_HEADERS).forEach(function (r) {
+    if (String(r.v[0]) !== act.id) return;
+    var n = Number(r.v[3]); if (!(n >= 0)) return;
+    getE_(r.v[1]).objByForm[String(r.v[2])] = n;
+  });
+  // période
+  var dk = Object.keys(allDays).sort(), start = act.debut || dk[0] || today, endAct = act.fin || '';
+  var end = endAct && endAct < today ? endAct : today; if (end < start) end = start;
+  var nDays = Math.min(daysBetween_(start, end) + 1, SUIVI_MAXDAYS), days = [], i2;
+  for (i2 = 0; i2 < nDays; i2++) days.push(i2 === 0 ? start : dayPlus_(start, i2));
+  var totalDays = (act.debut && act.fin) ? Math.max(1, daysBetween_(act.debut, act.fin) + 1) : 0;
+  var elapsed = act.debut ? Math.max(0, Math.min(daysBetween_(act.debut, today) + 1, totalDays || 99999)) : 0;
+  var formsKeys = srcs.map(function (x) { return x[0]; });
+  var list = order.map(function (k) {
+    var e = enq[k], total = 0, obj = 0, hasObj = false, f;
+    formsKeys.forEach(function (fk) { total += e.byForm[fk] || 0; if (e.objByForm[fk] !== undefined) { obj += e.objByForm[fk]; hasObj = true; } });
+    var run = 0, cumul = days.map(function (d) { run += e.daily[d] || 0; return run; });
+    var before = 0; Object.keys(e.daily).forEach(function (d) { if (d < start) before += e.daily[d]; }); // réponses datées avant le début (comptées au 1er jour)
+    if (before && cumul.length) cumul = cumul.map(function (v) { return v + before; });
+    var attendu = (hasObj && totalDays) ? Math.round(obj * Math.min(elapsed, totalDays) / totalDays * 10) / 10 : null;
+    var restant = hasObj ? Math.max(0, obj - total) : null, joursRest = totalDays ? Math.max(0, totalDays - elapsed) : null;
+    return { name: e.name, byForm: e.byForm, objByForm: e.objByForm, total: total, objectif: hasObj ? obj : null, attendu: attendu,
+      pct: hasObj && obj > 0 ? Math.round(total / obj * 1000) / 10 : null, ecart: attendu !== null ? Math.round((total - attendu) * 10) / 10 : null,
+      rythmeReel: elapsed > 0 ? Math.round(total / elapsed * 10) / 10 : null, rythmeRequis: (restant !== null && joursRest) ? Math.round(restant / joursRest * 10) / 10 : null,
+      last: Object.keys(e.daily).sort().pop() || '', cumul: cumul };
+  });
+  list.sort(function (a, b) { return b.total - a.total || a.name.localeCompare(b.name, 'fr'); });
+  var withObj = list.filter(function (e) { return e.objectif !== null; }), avgObj = withObj.length ? withObj.reduce(function (s, e) { return s + e.objectif; }, 0) / withObj.length : null;
+  var totals = { realise: 0, objectif: 0, attendu: 0, byForm: {}, nbEnq: list.length };
+  formsKeys.forEach(function (fk) { totals.byForm[fk] = { realise: 0, objectif: 0 }; });
+  list.forEach(function (e) {
+    totals.realise += e.total; if (e.objectif !== null) totals.objectif += e.objectif; if (e.attendu !== null) totals.attendu += e.attendu;
+    formsKeys.forEach(function (fk) { totals.byForm[fk].realise += e.byForm[fk] || 0; if (e.objByForm[fk] !== undefined) totals.byForm[fk].objectif += e.objByForm[fk]; });
+  });
+  totals.attendu = Math.round(totals.attendu * 10) / 10;
+  var attenduMoyen = (avgObj !== null && totalDays) ? days.map(function (d, i) { var t = Math.min(daysBetween_(act.debut || start, d) + 1, totalDays); return Math.round(avgObj * Math.max(0, t) / totalDays * 10) / 10; }) : null;
+  var cumulTotal = days.map(function (d, i) { var s = 0; list.forEach(function (e) { s += e.cumul[i]; }); return s; });
+  return { start: start, end: end, today: today, days: days, totalDays: totalDays, elapsed: elapsed, forms: formsKeys, enqueteurs: list, totals: totals,
+    avgObjectif: avgObj !== null ? Math.round(avgObj * 10) / 10 : null, attenduMoyen: attenduMoyen, cumulTotal: cumulTotal, nbObjectifs: withObj.length };
+}
+/** Point du personnel : effectif attendu (saisi par l'administrateur) et réponses du formulaire personnel pendant la période. */
+function suiviPersonnel_(act, c) {
+  var eff = suiviRows_(EFF_SHEET, EFF_HEADERS).filter(function (r) { return String(r.v[0]) === act.id; });
+  var structs = [], globalEff = 0;
+  eff.forEach(function (r) { var n = Number(r.v[2]) || 0, st = String(r.v[1] || '').trim(); if (!st) globalEff = n; else structs.push({ structure: st, effectif: n, repondu: 0, key: strip_(st) }); });
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), sh = ss.getSheetByName(act.level === 'hopital' ? SHEET_PERSONNELS_H : SHEET_PERSONNELS), repondu = 0, autres = 0;
+  if (sh && sh.getLastRow() > 1) {
+    var hm = buildHeaderMap_(sh).map, scol = act.level === 'hopital' ? 'fs' : 'Structure', st = readColumn_(sh, hm, scol), days = rowDays_(sh, hm);
+    var ck = act.level === 'hopital' ? strip_(act.cible) : '', hasCk = ck && st.some(function (v) { var k = strip_(v); return k && (k.indexOf(ck) > -1 || ck.indexOf(k) > -1); });
+    var from = act.debut || '', to = act.fin || '9999-12-31';
+    for (var i = 0; i < st.length; i++) {
+      var k = strip_(st[i]); if (!k && !days[i]) continue;
+      var d = days[i] || ''; if (from && (!d || d < from)) continue; if (d > to) continue;
+      if (hasCk && !(k.indexOf(ck) > -1 || ck.indexOf(k) > -1)) continue;
+      repondu++;
+      var hit = false; structs.forEach(function (x) { if (!hit && k && x.key === k) { x.repondu++; hit = true; } });
+      if (!hit) autres++;
+    }
+  }
+  var sumEff = structs.reduce(function (s, x) { return s + x.effectif; }, 0), effTotal = globalEff || sumEff;
+  structs.forEach(function (x) { x.taux = x.effectif > 0 ? Math.round(x.repondu / x.effectif * 1000) / 10 : null; delete x.key; });
+  return { effectif: effTotal, repondu: repondu, taux: effTotal > 0 ? Math.round(repondu / effTotal * 1000) / 10 : null, structures: structs, autres: autres, defini: effTotal > 0 };
+}
+function handleSuiviGet(token, actId) {
+  var c = suiviAccess_(token, actId); if (!c.ok) return c;
+  var act = actById_(actId); if (!act) return { ok: false, error: 'Activité introuvable.' };
+  var r = suiviCompute_(act); r.ok = true; r.activity = actSummary_(act); r.personnel = suiviPersonnel_(act, r); r.generatedAt = new Date().toISOString();
+  var sup = []; suiviRows_(AFF_SHEET, AFF_HEADERS).forEach(function (x) { if (String(x.v[0]) === act.id) { var f = findAccountRow_(x.v[1]); if (f) sup.push(String(f.data[6] || f.data[0])); } });
+  r.supervisors = sup; r.viewer = c.label;
+  return r;
+}
+/** Configuration (administrateur) : superviseurs, affectations, objectifs et effectifs d'une activité. */
+function handleSuiviConfig(token, actId) {
+  var c = requireAdminSession_(token); if (!c.ok) return c;
+  var v = accountsSheet_().getDataRange().getValues(), sups = [];
+  for (var i = 1; i < v.length; i++) if (String(v[i][2]) === SUP_LEVEL) sups.push({ username: String(v[i][0]), label: String(v[i][6] || v[i][0]), active: v[i][8] === undefined || v[i][8] === '' || v[i][8] === 'OUI' });
+  var out = { ok: true, supervisors: sups, activities: activitiesRows_().map(actSummary_) };
+  if (actId) {
+    var act = actById_(actId); if (!act) return { ok: false, error: 'Activité introuvable.' };
+    out.assigned = suiviRows_(AFF_SHEET, AFF_HEADERS).filter(function (r) { return String(r.v[0]) === act.id; }).map(function (r) { return String(r.v[1]); });
+    out.objectifs = suiviRows_(OBJ_SHEET, OBJ_HEADERS).filter(function (r) { return String(r.v[0]) === act.id; }).map(function (r) { return { enq: String(r.v[1]), cible: String(r.v[2]), obj: Number(r.v[3]) || 0 }; });
+    out.effectifs = suiviRows_(EFF_SHEET, EFF_HEADERS).filter(function (r) { return String(r.v[0]) === act.id; }).map(function (r) { return { structure: String(r.v[1]), effectif: Number(r.v[2]) || 0 }; });
+    var comp = suiviCompute_(act); out.detected = comp.enqueteurs.map(function (e) { return e.name; }); out.forms = comp.forms;
+  }
+  return out;
+}
+function handleSuiviSave(token, actId, cfg) {
+  var c = requireAdminSession_(token); if (!c.ok) return c;
+  var act = actById_(actId); if (!act) return { ok: false, error: 'Activité introuvable.' };
+  cfg = cfg || {};
+  var num = function (x) { var n = Math.round(Number(x)); return (n >= 0 && n <= 1000000) ? n : null; };
+  var okSup = {}; var v = accountsSheet_().getDataRange().getValues(); for (var i = 1; i < v.length; i++) if (String(v[i][2]) === SUP_LEVEL) okSup[String(v[i][0])] = 1;
+  var aff = [], seen = {}; (cfg.supervisors || []).forEach(function (u) { u = String(u); if (okSup[u] && !seen[u]) { seen[u] = 1; aff.push([act.id, u]); } });
+  var forms = act.level === 'hopital' ? ['usagers', 'communaute'] : ['usagers', 'cogecs'];
+  var obj = [], seenO = {};
+  (cfg.objectifs || []).forEach(function (o) {
+    var name = cleanName_(o.enq), n = num(o.obj), f = String(o.cible); if (!name || n === null || forms.indexOf(f) === -1) return;
+    var k = strip_(name) + '|' + f; if (seenO[k]) return; seenO[k] = 1; obj.push([act.id, name, f, String(n)]);
+  });
+  var eff = [], seenE = {};
+  (cfg.effectifs || []).forEach(function (e) {
+    var st = cleanName_(e.structure), n = num(e.effectif); if (n === null) return; var k = strip_(st); if (seenE[k]) return; seenE[k] = 1; eff.push([act.id, st, String(n)]);
+  });
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    suiviReplace_(AFF_SHEET, AFF_HEADERS, act.id, aff); suiviReplace_(OBJ_SHEET, OBJ_HEADERS, act.id, obj); suiviReplace_(EFF_SHEET, EFF_HEADERS, act.id, eff);
+    SpreadsheetApp.flush();
+  } finally { lock.releaseLock(); }
+  return { ok: true, superviseurs: aff.length, objectifs: obj.length, effectifs: eff.length };
+}
+function handleCreateSupervisor(token, username, label, password) {
+  var c = requireAdminSession_(token); if (!c.ok) return c;
+  username = String(username || '').trim(); label = cleanName_(label) || username;
+  if (!/^[A-Za-z0-9._-]{3,30}$/.test(username)) return { ok: false, error: "Identifiant : 3 à 30 caractères (lettres, chiffres, point, tiret, souligné), sans espace." };
+  if (String(password || '').length < 8) return { ok: false, error: 'Le mot de passe doit contenir au moins 8 caractères.' };
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    if (findAccountRow_(username)) return { ok: false, error: 'Cet identifiant existe déjà.' };
+    var sh = accountsSheet_(), row = sh.getLastRow() + 1;
+    sh.getRange(row, 1, 1, 9).setNumberFormat('@').setValues([[username, sha256Hex_(username + ':' + password), SUP_LEVEL, '', '', '', label, new Date().toISOString(), 'OUI']]);
+    return { ok: true, username: username, label: label };
+  } finally { lock.releaseLock(); }
+}
+function handleSetSupervisorPassword(token, username, password) {
+  var c = requireAdminSession_(token); if (!c.ok) return c;
+  if (String(password || '').length < 8) return { ok: false, error: 'Le mot de passe doit contenir au moins 8 caractères.' };
+  var f = findAccountRow_(username); if (!f || String(f.data[2]) !== SUP_LEVEL) return { ok: false, error: 'Compte superviseur introuvable.' };
+  var sh = accountsSheet_(); sh.getRange(f.row, 2).setValue(sha256Hex_(String(f.data[0]).trim() + ':' + password)); sh.getRange(f.row, 8).setValue(new Date().toISOString());
+  invalidateSessionsForUser_(String(f.data[0]).trim());
+  return { ok: true };
 }

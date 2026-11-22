@@ -5,7 +5,7 @@
 Après un redéploiement, les appareils qui avaient une adresse corrigée à la main depuis la page Administration reviennent automatiquement à cette adresse.
 
 1. **Apps Script** : remplacez tout le contenu de `Code.gs`, enregistrez, déployez une **nouvelle version**. Si c'est une première installation, exécutez aussi `setupComptesEtQrTokens` (crée la feuille `CodesAcces`) et `setupFeuillesHopitaux` (crée les 3 feuilles hôpital). Rien à exécuter pour les activités : la feuille `Activites` se crée toute seule. Si une feuille `ACTEURS_COM_HOPITAL` existe, supprimez-la : elle n'est plus utilisée. Ne rééxécutez pas `effacerMotsDePasse` si déjà fait.
-2. **GitHub** : déposez à la racine tous les fichiers sauf `Code.gs` et `LISEZ-MOI.md`, puis attendez 1-2 min (le cache `sat-v10` se met à jour tout seul).
+2. **GitHub** : déposez à la racine tous les fichiers sauf `Code.gs` et `LISEZ-MOI.md`, puis attendez 1-2 min (le cache `sat-v13` se met à jour tout seul).
 3. **Utilisation** : l'accueil propose *Collecter des données* (Zone sanitaire / Hôpital) et *Administration*.
 4. **Codes** : `AdminQR.html` (connexion admin, depuis téléphone ou tablette) permet de créer un code général ou un code par zone sanitaire / par hôpital, de le partager, imprimer, changer, désactiver ou supprimer.
 5. Le personnel (CS et hôpital) n'a jamais besoin de code. Un enquêteur saisit son code une seule fois par niveau.
@@ -55,14 +55,29 @@ Dans chaque formulaire, « Enregistrer la réponse » envoie directement les don
 **Gestionnaires** (« Gestionnaires — un lien par gestionnaire ») : un lien par compte actif (hors administrateur), de la forme `AdminDashboard.html?u=identifiant`. Le gestionnaire ouvre le lien, son identifiant est déjà rempli, il saisit son mot de passe et accède à son tableau de bord. Le mot de passe n'apparaît jamais dans le lien. Un QR du lien est disponible (à afficher, télécharger en image ou imprimer).
 
 ## Factures des enquêteurs et attestations de bonne fin d'exécution (v10)
-**Installation (une seule fois)** : dans Apps Script, remplacez `Code.gs`, puis exécutez la fonction **`setupEnqueteursEtFactures`** et acceptez l'autorisation d'accès à Google Drive (les PDF sont rangés dans un dossier « Factures enquêteurs - Satisfaction » créé automatiquement). Déployez ensuite une **nouvelle version**. Trois feuilles se créent : `Enqueteurs`, `Factures`, `AttestParams`. Dans GitHub, ajoutez aussi le dossier `att/` (polices, logo, tampon) et les fichiers `Facture.html`, `AdminAttestations.html`, `attestation.js`.
+**Installation (une seule fois)** : dans Apps Script, remplacez `Code.gs`, puis exécutez la fonction **`setupEnqueteursEtFactures`**. **Aucune autorisation Google Drive n'est nécessaire** : les PDF sont enregistrés directement dans Google Sheets (feuille `FacturesFichiers`, découpés en morceaux). Déployez ensuite une **nouvelle version**. Quatre feuilles se créent : `Enqueteurs`, `Factures`, `FacturesFichiers`, `AttestParams`. Ne modifiez ni ne triez la feuille `FacturesFichiers` à la main. Les anciennes factures déjà stockées sur Drive (s'il y en a) restent lisibles. Dans GitHub, ajoutez aussi le dossier `att/` (polices, logo, tampon) et les fichiers `Facture.html`, `AdminAttestations.html`, `attestation.js`.
 
 **Pour l'enquêteur** (`Facture.html`, carte **🧾 Facture et attestation** de l'accueil) : il identifie son activité (QR ou code ; l'activité peut être terminée depuis moins de 60 jours), saisit **nom** et **prénom**, ajoute une ou plusieurs factures normalisées en **PDF** (5 Mo maximum chacune) et envoie. Il peut revenir ajouter d'autres factures : elles se rattachent à la même personne (même nom et prénom, même activité).
 
 **Pour l'administrateur principal seulement** (`AdminAttestations.html`, lien « 🎓 Attestations » dans Administration ; compte de niveau `admin`) :
-1. Choisir l'activité (période de collecte) : la liste de tous les enquêteurs s'affiche avec leurs factures (bouton *Ouvrir*), modification possible du nom/prénom, suppression.
+1. Choisir l'activité (période de collecte) : la liste de tous les enquêteurs s'affiche avec leurs factures (boutons *Ouvrir* et ⬇️ *Télécharger*, et **🧾 Télécharger toutes les factures (ZIP)** pour l'activité), modification possible du nom/prénom, suppression.
 2. **Paramètres de l'attestation** (par activité) : zone sanitaire ou hôpital affiché, dates de collecte, année, lieu et **date de signature**. Les champs sont préremplis depuis l'activité ; la date de signature est obligatoire.
 3. Pour chaque enquêteur, un **bouton bascule « Attestation validée »** (ou *Valider tous ceux qui ont déposé une facture*).
 4. Pour les seuls enquêteurs validés : **⬇️ Attestation PDF** (une personne) ou **ZIP** (toutes les attestations validées de l'activité).
 
 **Le PDF** : une page A4 paysage fidèle au canevas (cadre, logo, tampon et signature), type *Zone Sanitaire* ou *Hôpital* selon l'activité. Le contenu est aplati en image et le fichier est protégé (impression autorisée, modification et copie interdites). La génération se fait dans le navigateur (connexion Internet requise pour charger jsPDF et JSZip).
+
+**Attestation côté enquêteur (v12)** : dans `Facture.html`, la carte **🎓 Mon attestation** vérifie automatiquement l'état du dossier (nom + prénom + code de l'activité). Tant que l'administrateur n'a pas validé, l'enquêteur voit « en attente ». Dès la validation (bouton bascule dans `AdminAttestations.html`, avec les paramètres de l'attestation enregistrés dont la date de signature), le bouton **⬇️ Télécharger mon attestation (PDF)** apparaît. Côté administrateur, **Ouvrir** affiche un aperçu intégré de la facture, avec bouton Télécharger.
+
+## Suivi de la collecte, superviseurs d'activité, objectifs et effectif du personnel (v13)
+**Installation** : remplacez `Code.gs`, exécutez une fois **`setupSuivi`** (crée les feuilles `Affectations`, `Objectifs`, `Effectifs`), déployez une nouvelle version, puis déposez les fichiers sur GitHub (nouvelle page `AdminSuivi.html`, liens ajoutés dans l'accueil, Administration, Tableau de bord et Attestations).
+
+**Administrateur** (`AdminSuivi.html` → onglet **Configuration**, pour l'activité choisie) :
+1. **Superviseurs** : créer un compte (identifiant, nom, mot de passe), cocher ceux qui suivent l'activité, copier leur lien de connexion, changer le mot de passe, désactiver ou supprimer. Un superviseur d'activité (niveau `superviseur_act`) ne voit que le suivi des activités qui lui sont affectées.
+2. **Objectifs** : nombre de questionnaires attendu par enquêteur et par cible (Usagers, COGECS ou Communauté selon le niveau), avec « même objectif pour tous ». Les enquêteurs sont détectés à partir des réponses de l'activité ; on peut en ajouter à l'avance.
+3. **Effectif du personnel** : total et/ou détail par structure.
+Penser à **Enregistrer la configuration**.
+
+**Suivi (administrateur et superviseurs)** : évolution cumulée par enquêteur jour après jour avec le **niveau moyen attendu** (objectif moyen étalé linéairement sur la période), tableau par enquêteur (réalisé, objectif, attendu à ce jour, écart, avancement, statut, rythme réel et requis, dernière saisie) et **point du personnel** (effectif, réponses reçues, reste à enquêter, taux de participation, détail par structure). Actualisation automatique toutes les minutes. **📷 Exporter en image** produit un PNG (partage direct possible sur téléphone).
+
+**Règles de calcul** : le réalisé est compté par le code QR de l'activité (colonne `IdActivité`), l'enquêteur par la colonne « Identification de l'enquêteur » (ou « Enqueteur » en hôpital), sans tenir compte des accents ni des majuscules. Le personnel n'utilisant pas de code, ses réponses sont comptées sur la période de l'activité (et, pour un hôpital, sur la formation sanitaire correspondant au nom de l'activité).

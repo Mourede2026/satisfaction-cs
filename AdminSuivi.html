@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Suivi de la collecte</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+ :root{--brand:#0f4c81;--ok:#1a7f4b;--warn:#b26a00;--bad:#c0392b}
+ *{box-sizing:border-box}
+ body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f4f6f8;margin:0;color:#1f2937}
+ header{background:var(--brand);color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+ header h1{margin:0;font-size:1.05rem}
+ header nav a,header nav button{color:#cfe3f7;text-decoration:none;font-size:.85rem;margin-left:12px;background:none;border:0;cursor:pointer;font-family:inherit;padding:0}
+ main{max-width:1040px;margin:0 auto;padding:16px}
+ .box{background:#fff;border-radius:14px;padding:18px;margin:0 0 14px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+ #login{max-width:360px;margin:40px auto}
+ h2{font-size:1rem;color:var(--brand);margin:0 0 6px} h3{font-size:.95rem;margin:0 0 6px}
+ .hint{color:#6b7280;font-size:.82rem;margin:0 0 10px}
+ input,button,select{padding:10px 12px;border-radius:10px;font-size:.95rem;font-family:inherit}
+ input,select{width:100%;border:1px solid #dfe4ea;margin-top:4px;background:#fff}
+ label.l{font-size:.78rem;color:#6b7280;display:block;margin-top:10px}
+ button.pri{border:0;background:var(--brand);color:#fff;font-weight:600;cursor:pointer}
+ button.alt{background:#fff;color:var(--brand);border:1px solid var(--brand);cursor:pointer;font-size:.85rem;padding:8px 12px}
+ button.dng{background:#fff;color:var(--bad);border:1px solid var(--bad);cursor:pointer;font-size:.85rem;padding:8px 12px}
+ button:disabled{opacity:.45;cursor:default}
+ .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
+ .row input,.row select{width:auto;margin:0}
+ .grid{display:grid;gap:10px}
+ @media (min-width:700px){.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:1fr 1fr 1fr}}
+ .tabs{display:flex;gap:6px;margin:0 0 12px}
+ .tabs button{flex:1;border:1px solid #dfe4ea;background:#fff;color:#4b5563;cursor:pointer;padding:10px;border-radius:10px;font-weight:600}
+ .tabs button.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+ #err{color:var(--bad);font-size:.9rem;margin:8px 0}
+ /* rapport (exporté en image) */
+ #report{background:#fff;border-radius:14px;padding:20px}
+ #report h1{margin:0;font-size:1.25rem;color:var(--brand)}
+ .sub{color:#6b7280;font-size:.85rem;margin:3px 0 0}
+ .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:16px 0}
+ .kpi{border:1px solid #e5e9ee;border-radius:12px;padding:12px;background:#fafbfc}
+ .kpi b{display:block;font-size:1.5rem;color:var(--brand)} .kpi span{font-size:.78rem;color:#6b7280}
+ .sec{margin:22px 0 0;padding-top:14px;border-top:2px solid #eef2f6}
+ .sec h2{font-size:1.05rem}
+ table{width:100%;border-collapse:collapse;font-size:.84rem}
+ th{background:#eef3f8;color:#33475b;text-align:left;padding:8px 6px;font-weight:600;white-space:nowrap}
+ td{padding:8px 6px;border-bottom:1px solid #eef2f6;vertical-align:middle}
+ td.n,th.n{text-align:right;white-space:nowrap}
+ .scroll{overflow-x:auto}
+ .bar{height:10px;background:#e8edf2;border-radius:99px;overflow:hidden;min-width:70px;position:relative}
+ .bar i{display:block;height:100%;border-radius:99px}
+ .pill{display:inline-block;font-size:.72rem;padding:2px 8px;border-radius:99px;white-space:nowrap}
+ .p-ok{background:#e6f6ee;color:var(--ok)}.p-warn{background:#fff4e0;color:var(--warn)}.p-bad{background:#fdecea;color:var(--bad)}.p-na{background:#eef0f3;color:#6b7280}
+ .legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.78rem;margin-top:6px}
+ .legend span{display:inline-flex;align-items:center;gap:5px}.legend i{display:inline-block;width:14px;height:4px;border-radius:2px}
+ .legend i.d{background:repeating-linear-gradient(90deg,#111 0 5px,transparent 5px 8px)!important;height:3px}
+ svg text{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+ .foot{margin-top:16px;font-size:.74rem;color:#9aa3ad}
+ .empty{color:#6b7280;font-size:.9rem;padding:10px 0}
+ /* configuration */
+ .cfgtb td,.cfgtb th{padding:6px 4px}
+ .cfgtb input{margin:0;padding:7px 8px;font-size:.9rem;width:100%;min-width:64px}
+ .sup{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid #eef2f6}
+ .sup .nm{flex:1;min-width:160px}.sup small{color:#6b7280;display:block}
+ .sup input[type=checkbox]{width:20px;height:20px;margin:0}
+ #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1f2937;color:#fff;padding:10px 16px;border-radius:10px;font-size:.88rem;display:none;z-index:50}
+ .live{display:inline-flex;align-items:center;gap:6px;font-size:.8rem;color:#6b7280}.live input{width:auto;margin:0}
+</style><link rel="manifest" href="manifest.json"><meta name="theme-color" content="#0f4c81"><link rel="icon" href="icon-192.png">
+</head><body>
+<header>
+ <h1>📈 Suivi de la collecte</h1>
+ <nav><a href="index.html">Accueil</a><span id="adminLinks"><a href="AdminQR.html">⚙️ Administration</a><a href="AdminDashboard.html">📊 Tableau de bord</a><a href="AdminAttestations.html">🎓 Attestations</a></span><button id="logout" style="display:none" onclick="location.reload()">Déconnexion</button></nav>
+</header>
+<main>
+ <div class="box" id="login">
+  <h3>Connexion</h3>
+  <p class="hint">Administrateur ou superviseur d'activité.</p>
+  <input id="u" placeholder="Identifiant" autocomplete="username" autocapitalize="none">
+  <input id="p" type="password" placeholder="Mot de passe" autocomplete="current-password" onkeydown="if(event.key==='Enter')login()">
+  <button class="pri" style="width:100%;margin-top:12px" onclick="login()">Se connecter</button>
+ </div>
+ <div id="err"></div>
+
+ <div id="panel" style="display:none">
+  <div class="box">
+   <label class="l" for="sel" style="margin-top:0">Activité</label>
+   <select id="sel" onchange="pick(this.value)"></select>
+   <div class="row">
+    <button class="alt" onclick="refresh(true)">↻ Actualiser</button>
+    <label class="live"><input type="checkbox" id="auto" checked> Actualisation automatique (1 min)</label>
+    <button class="pri" id="expBtn" onclick="exportPng(false)">📷 Exporter en image</button>
+    <button class="alt" id="shBtn" onclick="exportPng(true)" style="display:none">📤 Partager l'image</button>
+   </div>
+  </div>
+  <div class="tabs" id="tabs"><button id="t-suivi" class="on" onclick="tab('suivi')">📈 Suivi</button><button id="t-conf" onclick="tab('conf')">⚙️ Configuration</button></div>
+
+  <div id="v-suivi"><div id="report"><div class="empty">Chargement…</div></div></div>
+
+  <div id="v-conf" style="display:none"></div>
+ </div>
+</main>
+<div id="toast"></div>
+<script src="config.js"></script>
+<script>
+ var tok='', me=null, acts=[], cur='', data=null, cfg=null, timer=null, view='suivi';
+ var COLORS=['#0f4c81','#e67e22','#1a9e5c','#8e44ad','#c0392b','#16a5b8','#d4ac0d','#7f8c8d','#e84393','#2e86c1','#6c5b3e','#52be80'];
+ var FORM_LBL={usagers:'Usagers',cogecs:'COGECS',communaute:'Communauté'};
+ function $(i){return document.getElementById(i);}
+ function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+ function err(t){$('err').textContent=t||'';}
+ function toast(t){var x=$('toast');x.textContent=t;x.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(function(){x.style.display='none';},2400);}
+ function frDate(s){return s?String(s).split('-').reverse().join('/'):'';}
+ function shortDate(s){var p=String(s).split('-');return p[2]+'/'+p[1];}
+ function frDT(iso){var d=new Date(iso);return isNaN(d)?'':d.toLocaleDateString('fr-FR')+' à '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});}
+ function num(n,d){return n==null?'—':(Math.round(n*Math.pow(10,d||0))/Math.pow(10,d||0)).toLocaleString('fr-FR');}
+ function slug(t){return String(t).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9]+/g,'_').replace(/^_|_$/g,'').slice(0,60)||'activite';}
+ function saveBlob(b,name){var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove();},1500);}
+ function api(action,d,pw){d=d||{};d.token=tok;return callApi(action,d,pw).then(function(r){if(!r||!r.ok)throw new Error(r&&r.error||'Erreur');return r;});}
+
+ /* ---------- Connexion ---------- */
+ (function(){try{var q=new URLSearchParams(location.search).get('u');if(q){$('u').value=q;setTimeout(function(){$('p').focus();},50);}}catch(e){}})();
+ function login(){
+  err('Connexion…');
+  callApi('accountLogin',{username:$('u').value.trim()},$('p').value).then(function(r){
+   if(!r||!r.ok){err(r&&r.error||'Échec de connexion');return;}
+   var lv=r.account.level;
+   if(lv!=='admin'&&lv!=='superviseur_act'){err("Ce compte n'a pas accès au suivi de la collecte (administrateur ou superviseur d'activité).");return;}
+   tok=r.token;me=r.account;err('');$('login').style.display='none';$('panel').style.display='block';$('logout').style.display='inline';
+   var adm=lv==='admin';$('adminLinks').style.display=adm?'inline':'none';$('t-conf').style.display=adm?'':'none';if(!adm)$('tabs').style.display='none';
+   if(navigator.canShare&&navigator.share)$('shBtn').style.display='';
+   loadList();
+  }).catch(function(e){err(e.message||'Erreur de connexion.');});
+ }
+ function loadList(){
+  api('suiviList').then(function(r){
+   acts=r.activities||[];
+   if(!acts.length){$('sel').innerHTML='<option value="">'+(r.admin?"Aucune activité — créez-en une dans Administration":"Aucune activité ne vous est encore affectée")+'</option>';$('report').innerHTML='<div class="empty">'+(r.admin?'Créez une activité dans Administration.':"Contactez l'administrateur pour qu'il vous affecte une activité.")+'</div>';return;}
+   if(!cur||!acts.some(function(a){return a.id===cur;}))cur=acts[0].id;
+   $('sel').innerHTML=acts.map(function(a){return '<option value="'+esc(a.id)+'"'+(a.id===cur?' selected':'')+'>'+esc(a.name)+((a.debut||a.fin)?' ('+frDate(a.debut)+(a.fin?' → '+frDate(a.fin):'')+')':'')+'</option>';}).join('');
+   pick(cur);
+  }).catch(function(e){err(e.message);});
+ }
+ function pick(id){cur=id;cfg=null;data=null;if(view==='conf')loadConf();else refresh(true);}
+ function tab(v){
+  view=v;$('t-suivi').className=v==='suivi'?'on':'';$('t-conf').className=v==='conf'?'on':'';
+  $('v-suivi').style.display=v==='suivi'?'block':'none';$('v-conf').style.display=v==='conf'?'block':'none';
+  $('expBtn').style.display=$('shBtn').style.display=(v==='suivi')?'':'none';if(v==='suivi'&&!(navigator.canShare&&navigator.share))$('shBtn').style.display='none';
+  if(v==='conf'&&!cfg)loadConf();else if(v==='suivi')refresh(true);
+ }
+ function refresh(manual){
+  if(!cur)return;
+  api('suiviGet',{actId:cur}).then(function(r){data=r;err('');if(view==='suivi')drawReport();}).catch(function(e){err(e.message);});
+ }
+ setInterval(function(){if($('auto')&&$('auto').checked&&tok&&view==='suivi'&&!document.hidden)refresh(false);},60000);
+
+ /* ---------- Graphique SVG ---------- */
+ function lineChart(days,series,W,H){
+  var L=46,R=16,T=14,B=34,pw=W-L-R,ph=H-T-B,max=0,i;
+  series.forEach(function(s){s.values.forEach(function(v){if(v!=null&&v>max)max=v;});});
+  if(max<=0)max=1;var step=Math.pow(10,Math.floor(Math.log10(max)));var nice=[1,2,2.5,5,10].map(function(m){return m*step;}).filter(function(v){return v>=max/6;})[0]||step*10;
+  var top=Math.ceil(max/nice)*nice;if(top<max)top+=nice;
+  var n=days.length,x=function(i){return L+(n<=1?pw/2:i*pw/(n-1));},y=function(v){return T+ph-(v/top)*ph;},o='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+W+' '+H+'" width="100%" style="display:block">';
+  for(var g=0;g<=top;g+=nice){o+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+y(g)+'" y2="'+y(g)+'" stroke="#e5e9ee"/><text x="'+(L-6)+'" y="'+(y(g)+4)+'" text-anchor="end" font-size="11" fill="#6b7280">'+num(g)+'</text>';}
+  var every=Math.max(1,Math.ceil(n/8));
+  for(i=0;i<n;i+=every)o+='<text x="'+x(i)+'" y="'+(H-10)+'" text-anchor="middle" font-size="11" fill="#6b7280">'+shortDate(days[i])+'</text>';
+  o+='<line x1="'+L+'" x2="'+L+'" y1="'+T+'" y2="'+(T+ph)+'" stroke="#cbd2da"/><line x1="'+L+'" x2="'+(W-R)+'" y1="'+(T+ph)+'" y2="'+(T+ph)+'" stroke="#cbd2da"/>';
+  series.forEach(function(s){
+   var pts=[];s.values.forEach(function(v,i){if(v!=null)pts.push(x(i)+','+y(v));});
+   if(!pts.length)return;
+   if(pts.length===1){var p=pts[0].split(',');o+='<circle cx="'+p[0]+'" cy="'+p[1]+'" r="3.5" fill="'+s.color+'"/>';}
+   else o+='<polyline fill="none" stroke="'+s.color+'" stroke-width="'+(s.dash?2:2.4)+'"'+(s.dash?' stroke-dasharray="7 5"':'')+' stroke-linejoin="round" points="'+pts.join(' ')+'"/>';
+  });
+  return o+'</svg>';
+ }
+ function statusOf(e){
+  if(e.objectif==null)return ['p-na','Sans objectif'];
+  if(e.pct>=100)return ['p-ok','Objectif atteint'];
+  if(e.attendu==null)return ['p-na','—'];
+  if(e.ecart>=0)return ['p-ok','Dans le rythme'];
+  return e.ecart>=-0.1*e.objectif?['p-warn','Léger retard']:['p-bad','En retard'];
+ }
+ function bar(p,color){p=Math.max(0,Math.min(100,p||0));return '<div class="bar"><i style="width:'+p+'%;background:'+color+'"></i></div>';}
+ function barColor(p){return p>=100?'#1a7f4b':p>=60?'#0f4c81':p>=30?'#e69f1b':'#c0392b';}
+
+ /* ---------- Rapport ---------- */
+ function drawReport(){
+  var d=data,a=d.activity,t=d.totals,h='';
+  var per=(a.debut||a.fin)?'Période : '+(a.debut?'du '+frDate(a.debut):'')+(a.fin?' au '+frDate(a.fin):''):'';
+  h+='<h1>'+esc(a.name)+'</h1><p class="sub">'+(a.level==='hopital'?'🏥 Hôpital':'🏘️ Zone sanitaire')+(a.cible?' — '+esc(a.cible):'')+(per?' · '+per:'')+'</p>';
+  h+='<p class="sub">Situation au '+frDT(d.generatedAt)+(d.supervisors&&d.supervisors.length?' · Superviseur(s) : '+esc(d.supervisors.join(', ')):'')+'</p>';
+  var av=t.objectif>0?Math.round(t.realise/t.objectif*1000)/10:null;
+  h+='<div class="kpis">'+
+   '<div class="kpi"><b>'+num(t.realise)+'</b><span>Questionnaires collectés</span></div>'+
+   '<div class="kpi"><b>'+(t.objectif>0?num(t.objectif):'—')+'</b><span>Objectif total</span></div>'+
+   '<div class="kpi"><b>'+(t.objectif>0&&d.totalDays?num(t.attendu,1):'—')+'</b><span>Attendu à ce jour</span></div>'+
+   '<div class="kpi"><b>'+(av!=null?num(av,1)+' %':'—')+'</b><span>Avancement</span></div>'+
+   '<div class="kpi"><b>'+(d.totalDays?d.elapsed+' / '+d.totalDays:d.elapsed||'—')+'</b><span>Jours écoulés</span></div>'+
+   '<div class="kpi"><b>'+t.nbEnq+'</b><span>Enquêteur(s) actif(s)</span></div></div>';
+  h+='<div class="sec"><h2>Évolution de la collecte par enquêteur</h2>';
+  if(!d.enqueteurs.length){h+='<div class="empty">Aucune réponse n\'a encore été reçue pour cette activité.</div>';}
+  else{
+   var ser=d.enqueteurs.slice(0,12).map(function(e,i){return {name:e.name,color:COLORS[i%COLORS.length],values:e.cumul};});
+   var legend=ser.map(function(s){return '<span><i style="background:'+s.color+'"></i>'+esc(s.name)+'</span>';}).join('');
+   if(d.attenduMoyen){ser.push({name:'',color:'#111',dash:true,values:d.attenduMoyen});legend+='<span><i class="d"></i><b>Niveau moyen attendu</b> ('+num(d.avgObjectif,1)+' / enquêteur sur la période)</span>';}
+   h+='<p class="sub" style="margin-bottom:6px">Nombre cumulé de questionnaires, jour après jour.'+(d.attenduMoyen?'':' Définissez des objectifs (onglet Configuration) pour afficher le niveau attendu.')+'</p>'+lineChart(d.days,ser,900,330)+'<div class="legend">'+legend+'</div>';
+  }
+  h+='</div>';
+  // tableau enquêteurs
+  h+='<div class="sec"><h2>Point par enquêteur</h2>';
+  if(d.enqueteurs.length){
+   h+='<div class="scroll"><table><thead><tr><th>Enquêteur</th>'+d.forms.map(function(f){return '<th class="n">'+FORM_LBL[f]+'</th>';}).join('')+'<th class="n">Total</th><th class="n">Objectif</th><th class="n">Attendu</th><th class="n">Écart</th><th style="min-width:110px">Avancement</th><th>Statut</th><th>Rythme / jour</th><th>Dernière saisie</th></tr></thead><tbody>';
+   d.enqueteurs.forEach(function(e){
+    var st=statusOf(e),pc=e.pct;
+    h+='<tr><td><b>'+esc(e.name)+'</b></td>'+d.forms.map(function(f){var r=e.byForm[f]||0,o=e.objByForm[f];return '<td class="n">'+num(r)+(o!=null?' <span style="color:#9aa3ad">/ '+num(o)+'</span>':'')+'</td>';}).join('')+
+     '<td class="n"><b>'+num(e.total)+'</b></td><td class="n">'+(e.objectif!=null?num(e.objectif):'—')+'</td><td class="n">'+(e.attendu!=null?num(e.attendu,1):'—')+'</td>'+
+     '<td class="n" style="color:'+(e.ecart==null?'#6b7280':e.ecart>=0?'#1a7f4b':'#c0392b')+'">'+(e.ecart==null?'—':(e.ecart>0?'+':'')+num(e.ecart,1))+'</td>'+
+     '<td>'+(pc!=null?bar(pc,barColor(pc))+'<small>'+num(pc,1)+' %</small>':'—')+'</td><td><span class="pill '+st[0]+'">'+st[1]+'</span></td>'+
+     '<td class="n">'+(e.rythmeReel!=null?num(e.rythmeReel,1):'—')+(e.rythmeRequis!=null?' <span style="color:#9aa3ad">(requis '+num(e.rythmeRequis,1)+')</span>':'')+'</td><td>'+(e.last?frDate(e.last):'—')+'</td></tr>';
+   });
+   h+='<tr style="font-weight:700;background:#fafbfc"><td>Ensemble</td>'+d.forms.map(function(f){var x=t.byForm[f];return '<td class="n">'+num(x.realise)+(x.objectif?' / '+num(x.objectif):'')+'</td>';}).join('')+'<td class="n">'+num(t.realise)+'</td><td class="n">'+(t.objectif?num(t.objectif):'—')+'</td><td class="n">'+(t.objectif&&d.totalDays?num(t.attendu,1):'—')+'</td><td></td><td colspan="4"></td></tr>';
+   h+='</tbody></table></div><p class="hint" style="margin-top:8px">« Attendu » = objectif × jours écoulés ÷ durée de l\'activité. « Rythme requis » = ce qui reste à collecter ÷ jours restants.</p>';
+  }else h+='<div class="empty">Aucun enquêteur pour le moment.</div>';
+  h+='</div>';
+  // personnel
+  var p=d.personnel;
+  h+='<div class="sec"><h2>Point du personnel</h2>';
+  if(!p.defini&&!p.repondu){h+='<div class="empty">Effectif du personnel non renseigné et aucune réponse du personnel sur la période.'+(me.level==='admin'?' Renseignez-le dans l\'onglet Configuration.':'')+'</div>';}
+  else{
+   h+='<div class="kpis"><div class="kpi"><b>'+(p.defini?num(p.effectif):'—')+'</b><span>Effectif du personnel</span></div><div class="kpi"><b>'+num(p.repondu)+'</b><span>Ont répondu</span></div><div class="kpi"><b>'+(p.defini?num(Math.max(0,p.effectif-p.repondu)):'—')+'</b><span>Restent à enquêter</span></div><div class="kpi"><b>'+(p.taux!=null?num(p.taux,1)+' %':'—')+'</b><span>Taux de participation</span></div></div>';
+   if(p.taux!=null)h+=bar(p.taux,barColor(p.taux));
+   if(p.structures.length){
+    h+='<div class="scroll" style="margin-top:12px"><table><thead><tr><th>Structure</th><th class="n">Effectif</th><th class="n">Réponses</th><th class="n">Reste</th><th style="min-width:120px">Participation</th></tr></thead><tbody>'+
+     p.structures.map(function(s){return '<tr><td>'+esc(s.structure)+'</td><td class="n">'+num(s.effectif)+'</td><td class="n">'+num(s.repondu)+'</td><td class="n">'+num(Math.max(0,s.effectif-s.repondu))+'</td><td>'+(s.taux!=null?bar(s.taux,barColor(s.taux))+'<small>'+num(s.taux,1)+' %</small>':'—')+'</td></tr>';}).join('')+
+     (p.autres?'<tr><td><i>Autres structures (non listées)</i></td><td class="n">—</td><td class="n">'+num(p.autres)+'</td><td class="n">—</td><td></td></tr>':'')+'</tbody></table></div>';
+   }
+  }
+  h+='</div><div class="foot">Généré le '+frDT(d.generatedAt)+' · Suivi de la collecte</div>';
+  $('report').innerHTML=h;
+ }
+
+ /* ---------- Export en image ---------- */
+ function exportPng(share){
+  if(!data){toast('Rien à exporter');return;}
+  if(typeof html2canvas==='undefined'){err("Bibliothèque d'export non chargée (connexion Internet requise).");return;}
+  var btn=share?$('shBtn'):$('expBtn'),old=btn.textContent;btn.disabled=true;btn.textContent='Création de l\'image…';
+  html2canvas($('report'),{scale:2,backgroundColor:'#ffffff',useCORS:true,windowWidth:1100}).then(function(c){
+   c.toBlob(function(b){
+    btn.disabled=false;btn.textContent=old;
+    var name='Suivi_'+slug(data.activity.name)+'_'+data.generatedAt.slice(0,10)+'.png';
+    if(share){try{var f=new File([b],name,{type:'image/png'});if(navigator.canShare({files:[f]})){navigator.share({files:[f],title:'Suivi de la collecte — '+data.activity.name}).catch(function(){});return;}}catch(e){}}
+    saveBlob(b,name);toast('Image enregistrée');
+   },'image/png');
+  }).catch(function(e){btn.disabled=false;btn.textContent=old;err('Export impossible : '+(e&&e.message||e));});
+ }
+
+ /* ---------- Configuration (administrateur) ---------- */
+ var st={assigned:{},rows:[],effTotal:'',effRows:[],forms:[],sups:[]};
+ function loadConf(){
+  $('v-conf').innerHTML='<div class="box"><div class="empty">Chargement…</div></div>';
+  api('suiviConfig',{actId:cur}).then(function(r){
+   cfg=r;st.forms=r.forms||[];st.sups=r.supervisors||[];st.assigned={};(r.assigned||[]).forEach(function(u){st.assigned[u]=1;});
+   var m={},rows=[];
+   function row(name){var k=name.toLowerCase();if(!m[k]){m[k]={enq:name,vals:{}};rows.push(m[k]);}return m[k];}
+   (r.detected||[]).forEach(function(n){row(n);});
+   (r.objectifs||[]).forEach(function(o){row(o.enq).vals[o.cible]=String(o.obj);});
+   st.rows=rows;
+   var tot='',er=[];(r.effectifs||[]).forEach(function(e){if(!e.structure)tot=String(e.effectif);else er.push({structure:e.structure,effectif:String(e.effectif)});});
+   st.effTotal=tot;st.effRows=er;drawConf();
+  }).catch(function(e){$('v-conf').innerHTML='';err(e.message);});
+ }
+ function a_(){return acts.filter(function(a){return a.id===cur;})[0]||{};}
+ function drawConf(){
+  var a=a_(),h='';
+  h+='<div class="box"><h2>👤 Superviseurs de l\'activité « '+esc(a.name||'')+' »</h2><p class="hint">Un superviseur d\'activité ne voit que le suivi des activités qui lui sont affectées. Cochez ceux qui suivent cette activité.</p><div id="supList"></div>'+
+   '<h3 style="margin-top:14px">Créer un compte superviseur</h3><div class="grid g3"><div><label class="l" for="ns-u">Identifiant</label><input id="ns-u" placeholder="ex. sup.djidja" autocapitalize="none"></div><div><label class="l" for="ns-l">Nom affiché</label><input id="ns-l" placeholder="Nom et prénom"></div><div><label class="l" for="ns-p">Mot de passe (8 caractères min.)</label><input id="ns-p" type="text" autocomplete="off"></div></div><div class="row"><button class="pri" onclick="createSup()">➕ Créer le superviseur</button></div></div>';
+  h+='<div class="box"><h2>🎯 Objectifs par enquêteur et par cible</h2><p class="hint">Nombre de questionnaires attendu de chaque enquêteur sur toute la période de l\'activité. Les enquêteurs apparaissent dès leur première réponse ; vous pouvez aussi en ajouter à l\'avance (écrire le nom exactement comme dans le formulaire).</p><div id="objTb"></div>'+
+   '<div class="row"><input id="newEnq" placeholder="Ajouter un enquêteur (nom)" style="min-width:220px"><button class="alt" onclick="addEnq()">➕ Ajouter</button></div></div>';
+  h+='<div class="box"><h2>🧑‍⚕️ Effectif du personnel</h2><p class="hint">Effectif à enquêter (formulaire « Personnel ») : le tableau de bord compare en temps réel les réponses reçues pendant la période à cet effectif. Renseignez le total, et/ou le détail par structure (nom tel qu\'écrit dans le formulaire).</p>'+
+   '<label class="l" for="effT" style="margin-top:0">Effectif total du personnel</label><input id="effT" inputmode="numeric" value="'+esc(st.effTotal)+'" placeholder="Laissez vide pour utiliser la somme des structures" style="max-width:340px">'+
+   '<div id="effTb" style="margin-top:10px"></div><div class="row"><button class="alt" onclick="addEff()">➕ Ajouter une structure</button></div></div>';
+  h+='<div class="row" style="margin-bottom:30px"><button class="pri" id="saveBtn" onclick="saveConf()" style="padding:12px 22px">💾 Enregistrer la configuration</button><span class="hint" id="saveMsg" style="margin:0"></span></div>';
+  $('v-conf').innerHTML=h;drawSups();drawObj();drawEff();
+  $('effT').oninput=function(){st.effTotal=this.value;};
+ }
+ function drawSups(){
+  var b=$('supList');if(!b)return;
+  if(!st.sups.length){b.innerHTML='<div class="empty">Aucun compte superviseur pour le moment. Créez-en un ci-dessous.</div>';return;}
+  b.innerHTML=st.sups.map(function(s){
+   return '<div class="sup" data-u="'+esc(s.username)+'"><label style="display:flex;align-items:center;gap:8px;flex:1;min-width:200px;cursor:pointer"><input type="checkbox" data-k="as"'+(st.assigned[s.username]?' checked':'')+'><span class="nm"><b>'+esc(s.label)+'</b><small>'+esc(s.username)+(s.active?'':' · désactivé')+'</small></span></label>'+
+    '<button class="alt" data-k="lnk">🔗 Lien</button><button class="alt" data-k="pw">🔑 Mot de passe</button><button class="alt" data-k="act">'+(s.active?'Désactiver':'Activer')+'</button><button class="dng" data-k="del">🗑</button></div>';
+  }).join('');
+ }
+ document.addEventListener('click',function(ev){
+  var b=ev.target.closest('.sup button[data-k]');if(!b)return;
+  var u=b.closest('.sup').dataset.u,s=st.sups.filter(function(x){return x.username===u;})[0],k=b.dataset.k;
+  if(k==='lnk'){var l=location.href.split('?')[0].split('#')[0]+'?u='+encodeURIComponent(u);if(navigator.clipboard)navigator.clipboard.writeText(l).then(function(){toast('Lien copié');},function(){prompt('Lien :',l);});else prompt('Lien :',l);}
+  else if(k==='pw'){var pw=prompt('Nouveau mot de passe pour '+u+' (8 caractères minimum) :');if(!pw)return;api('setSupervisorPassword',{username:u},pw).then(function(){toast('Mot de passe modifié');}).catch(function(e){err(e.message);});}
+  else if(k==='act'){api('setAccountActive',{username:u,active:!s.active}).then(function(){s.active=!s.active;drawSups();toast(s.active?'Compte activé':'Compte désactivé');}).catch(function(e){err(e.message);});}
+  else if(k==='del'){if(!confirm('Supprimer le compte superviseur « '+u+' » ?'))return;api('deleteAccount',{username:u}).then(function(){st.sups=st.sups.filter(function(x){return x.username!==u;});delete st.assigned[u];drawSups();toast('Compte supprimé');}).catch(function(e){err(e.message);});}
+ });
+ document.addEventListener('change',function(ev){var c=ev.target;if(c.dataset&&c.dataset.k==='as'){var u=c.closest('.sup').dataset.u;if(c.checked)st.assigned[u]=1;else delete st.assigned[u];}});
+ function createSup(){
+  var u=$('ns-u').value.trim(),l=$('ns-l').value.trim(),p=$('ns-p').value;
+  api('createSupervisor',{username:u,label:l},p).then(function(r){
+   st.sups.push({username:r.username,label:r.label,active:true});st.assigned[r.username]=1;$('ns-u').value=$('ns-l').value=$('ns-p').value='';drawSups();toast('Superviseur créé et affecté à cette activité (pensez à enregistrer)');err('');
+  }).catch(function(e){err(e.message);});
+ }
+ function drawObj(){
+  var b=$('objTb');if(!b)return;
+  if(!st.rows.length){b.innerHTML='<div class="empty">Aucun enquêteur détecté pour le moment : ajoutez-en ci-dessous, ou attendez les premières réponses.</div>';return;}
+  var h='<div class="scroll"><table class="cfgtb"><thead><tr><th>Enquêteur</th>'+st.forms.map(function(f){return '<th style="min-width:110px">'+FORM_LBL[f]+'</th>';}).join('')+'<th></th></tr></thead><tbody>';
+  st.rows.forEach(function(r,i){h+='<tr><td><b>'+esc(r.enq)+'</b></td>'+st.forms.map(function(f){return '<td><input inputmode="numeric" data-i="'+i+'" data-f="'+f+'" value="'+esc(r.vals[f]||'')+'" placeholder="0"></td>';}).join('')+'<td><button class="dng" data-rm="'+i+'" style="padding:5px 9px">✕</button></td></tr>';});
+  h+='<tr style="background:#fafbfc"><td><i>Même objectif pour tous</i></td>'+st.forms.map(function(f){return '<td><div style="display:flex;gap:4px"><input inputmode="numeric" id="all-'+f+'" placeholder="N"><button class="alt" data-all="'+f+'" style="padding:5px 9px">OK</button></div></td>';}).join('')+'<td></td></tr></tbody></table></div>';
+  b.innerHTML=h;
+  b.oninput=function(ev){var t=ev.target;if(t.dataset.i!==undefined)st.rows[+t.dataset.i].vals[t.dataset.f]=t.value;};
+  b.onclick=function(ev){
+   var t=ev.target.closest('button');if(!t)return;
+   if(t.dataset.rm!==undefined){st.rows.splice(+t.dataset.rm,1);drawObj();}
+   else if(t.dataset.all){var v=$('all-'+t.dataset.all).value;st.rows.forEach(function(r){r.vals[t.dataset.all]=v;});drawObj();}
+  };
+ }
+ function addEnq(){var n=$('newEnq').value.replace(/\s+/g,' ').trim();if(!n)return;if(st.rows.some(function(r){return r.enq.toLowerCase()===n.toLowerCase();})){toast('Déjà dans la liste');return;}st.rows.push({enq:n,vals:{}});$('newEnq').value='';drawObj();}
+ function drawEff(){
+  var b=$('effTb');if(!b)return;
+  if(!st.effRows.length){b.innerHTML='<div class="hint">Aucune structure détaillée.</div>';return;}
+  b.innerHTML='<div class="scroll"><table class="cfgtb"><thead><tr><th>Structure</th><th style="width:130px">Effectif</th><th></th></tr></thead><tbody>'+st.effRows.map(function(r,i){return '<tr><td><input data-s="'+i+'" value="'+esc(r.structure)+'" placeholder="Ex. CS Agbokpa"></td><td><input inputmode="numeric" data-e="'+i+'" value="'+esc(r.effectif)+'"></td><td><button class="dng" data-rm="'+i+'" style="padding:5px 9px">✕</button></td></tr>';}).join('')+'</tbody></table></div>';
+  b.oninput=function(ev){var t=ev.target;if(t.dataset.s!==undefined)st.effRows[+t.dataset.s].structure=t.value;else if(t.dataset.e!==undefined)st.effRows[+t.dataset.e].effectif=t.value;};
+  b.onclick=function(ev){var t=ev.target.closest('button[data-rm]');if(t){st.effRows.splice(+t.dataset.rm,1);drawEff();}};
+ }
+ function addEff(){st.effRows.push({structure:'',effectif:''});drawEff();}
+ function saveConf(){
+  var objs=[];st.rows.forEach(function(r){st.forms.forEach(function(f){var v=String(r.vals[f]==null?'':r.vals[f]).trim();if(v!=='')objs.push({enq:r.enq,cible:f,obj:v});});});
+  var eff=[];if(String(st.effTotal).trim()!=='')eff.push({structure:'',effectif:st.effTotal});
+  st.effRows.forEach(function(r){if(String(r.structure).trim()&&String(r.effectif).trim()!=='')eff.push({structure:r.structure,effectif:r.effectif});});
+  var b=$('saveBtn');b.disabled=true;
+  api('suiviSave',{actId:cur,cfg:{supervisors:Object.keys(st.assigned),objectifs:objs,effectifs:eff}}).then(function(r){
+   b.disabled=false;$('saveMsg').textContent='✅ Enregistré : '+r.superviseurs+' superviseur(s), '+r.objectifs+' objectif(s), '+r.effectifs+' ligne(s) d\'effectif.';toast('Configuration enregistrée');err('');
+  }).catch(function(e){b.disabled=false;err(e.message);});
+ }
+</script></body></html>
