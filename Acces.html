@@ -9,16 +9,26 @@
  p{color:#6b7280;font-size:.9rem}
  input,button{width:100%;padding:12px;border-radius:10px;font-size:1rem;margin-top:10px;box-sizing:border-box}
  input{border:1px solid #dfe4ea}
- button{border:0;background:#0f4c81;color:#fff;font-weight:600}
+ button{border:0;background:#0f4c81;color:#fff;font-weight:600;cursor:pointer}
+ button.alt{background:#fff;color:#0f4c81;border:1px solid #0f4c81}
  a.back{display:block;text-align:center;margin-top:16px;color:#0f4c81;font-size:.9rem;text-decoration:none}
  #msg{margin-top:12px;font-size:.9rem}.err{color:#c0392b}.ok{color:#1a9e5c}
+ #scanBox{display:none;margin-top:12px}
+ #scanBox .frame{position:relative;border-radius:12px;overflow:hidden;background:#000;aspect-ratio:1/1}
+ #scanBox video{width:100%;height:100%;object-fit:cover;display:block}
+ #scanBox .aim{position:absolute;inset:18%;border:3px solid rgba(255,255,255,.85);border-radius:14px;box-shadow:0 0 0 999px rgba(0,0,0,.25)}
+ .sep{text-align:center;color:#9ca3af;font-size:.8rem;margin:14px 0 0}
 </style><link rel="manifest" href="manifest.json"><meta name="theme-color" content="#0f4c81"><link rel="icon" href="icon-192.png">
 </head><body>
 <main>
  <h1 id="title">Accès enquêteur</h1>
- <p id="intro">Scannez le code QR remis par l'administrateur avec l'appareil photo du téléphone, ou saisissez le code ci-dessous. Le code n'est demandé qu'une fois.</p>
- <input id="code" placeholder="Code d'accès" autocomplete="off" autocapitalize="characters" onkeydown="if(event.key==='Enter')go(this.value)">
- <button onclick="go(document.getElementById('code').value)">Entrer</button>
+ <p id="intro">Scannez le code QR de <b>votre activité</b> : vos formulaires s'ouvrent directement, sans rien saisir. Le scan n'est demandé qu'une fois.</p>
+ <button id="scanBtn" onclick="startScan()">📷 Scanner le code QR</button>
+ <div id="scanBox"><div class="frame"><video id="vid" playsinline muted></video><div class="aim"></div></div>
+  <button class="alt" onclick="stopScan()">Annuler le scan</button></div>
+ <div class="sep">ou, si le scan est impossible</div>
+ <input id="code" placeholder="Saisir le code d'accès" autocomplete="off" autocapitalize="characters" onkeydown="if(event.key==='Enter')go(this.value)">
+ <button class="alt" onclick="go(document.getElementById('code').value)">Entrer avec ce code</button>
  <div id="msg"></div>
  <a class="back" id="backLink" href="index.html">&larr; Retour à l'accueil</a>
 </main>
@@ -28,17 +38,77 @@
  var wantLevel=p.get('level'); if(wantLevel!=='zone'&&wantLevel!=='hopital')wantLevel='';
  var next=p.get('next')||''; if(!/^[A-Za-z0-9_\-]+\.html(#[a-z]+)?$/.test(next))next='';
  if(wantLevel){document.getElementById('title').textContent='Accès enquêteur — '+(wantLevel==='hopital'?'Hôpital':'Zone sanitaire');document.getElementById('backLink').href='index.html#'+wantLevel;}
- if(p.get('expired')){msg.className='err';msg.textContent="Le code d'accès a changé ou a été désactivé. Saisissez ou scannez le nouveau code. Vos réponses en attente sont conservées.";}
+ if(p.get('expired')){msg.className='err';msg.textContent="Le code d'accès a changé, a été désactivé ou l'activité est terminée. Scannez ou saisissez le nouveau code. Vos réponses en attente sont conservées.";}
+ var FORM_FILES={zone:{usagers:'FormUsagers.html',cogecs:'FormCogecs.html'},hopital:{usagers:'FormUsagersHopital.html',communaute:'FormCommunauteHopital.html'}};
+ var busy=false;
  function go(code){
-   code=(code||'').trim(); if(!code)return;
-   msg.className='';msg.textContent='Vérification…';
+   code=(code||'').trim(); if(!code||busy)return;
+   busy=true; msg.className='';msg.textContent='Vérification…';
    callApi('matchQrCode',{text:code}).then(function(r){
-     if(!r||!r.ok||(r.role!=='enqueteur'&&r.role!=='enqueteur_hopital')){msg.className='err';msg.textContent="Code invalide, remplacé ou désactivé. Demandez le code actuel à l'administrateur.";return;}
+     busy=false;
+     if(!r||!r.ok||(r.role!=='enqueteur'&&r.role!=='enqueteur_hopital')){msg.className='err';msg.textContent=(r&&r.error&&r.error!=='QR_INVALID'?r.error+' ':'')+"Code invalide, remplacé ou désactivé. Demandez le code actuel à l'administrateur.";return;}
      var level=r.level||(r.role==='enqueteur_hopital'?'hopital':'zone');
-     if(wantLevel&&level!==wantLevel){msg.className='err';msg.textContent=wantLevel==='hopital'?"Ce code est un code de zone sanitaire. Saisissez le code de l'hôpital.":"Ce code est un code d'hôpital. Saisissez le code de la zone sanitaire.";return;}
-     setQr(level,code,r.label||'');
-     location.replace(next||('index.html#'+level));
-   }).catch(function(e){msg.className='err';msg.textContent=(e&&e.message)||'Erreur de connexion.';});
+     if(wantLevel&&level!==wantLevel){msg.className='err';msg.textContent=wantLevel==='hopital'?"Ce code est un code de zone sanitaire. Scannez ou saisissez le code de l'hôpital.":"Ce code est un code d'hôpital. Scannez ou saisissez le code de la zone sanitaire.";return;}
+     // On garde le code tel que reconnu par le serveur (le lien complet d'un QR est réduit au code)
+     var token=code; try{var u=new URL(code);token=u.searchParams.get('code')||u.searchParams.get('t')||code;}catch(e){}
+     setQr(level,token,r.label||''); setActivity(level,r.activity||null);
+     msg.className='ok';msg.textContent='✅ '+(r.activity?'Activité « '+r.activity.name+' » activée.':'Accès activé.');
+     var dest='index.html#'+level, a=r.activity;
+     if(a){
+       var allowed=(a.forms&&a.forms.length)?a.forms:Object.keys(FORM_FILES[level]);
+       if(next&&allowed.some(function(k){return FORM_FILES[level][k]===next.split('#')[0];}))dest=next;
+       else if(allowed.length===1&&FORM_FILES[level][allowed[0]])dest=FORM_FILES[level][allowed[0]];
+     } else if(next) dest=next;
+     setTimeout(function(){location.replace(dest);},700);
+   }).catch(function(e){busy=false;msg.className='err';msg.textContent=(e&&e.message)||'Erreur de connexion.';});
+ }
+
+ /* ---------- Scanner intégré (caméra) ---------- */
+ var stream=null, scanning=false, detector=null, jsqrLoaded=false;
+ function stopScan(){
+   scanning=false;
+   if(stream){stream.getTracks().forEach(function(t){t.stop();});stream=null;}
+   document.getElementById('scanBox').style.display='none';
+   document.getElementById('scanBtn').style.display='block';
+ }
+ function loadJsQr(cb){
+   if(window.jsQR||jsqrLoaded){cb();return;}
+   var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js';
+   s.onload=function(){jsqrLoaded=true;cb();};
+   s.onerror=function(){msg.className='err';msg.textContent="Scanner indisponible sur cet appareil : utilisez l'appareil photo du téléphone ou saisissez le code.";stopScan();};
+   document.head.appendChild(s);
+ }
+ function startScan(){
+   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){msg.className='err';msg.textContent="La caméra n'est pas accessible ici (page non sécurisée ou navigateur trop ancien). Utilisez l'appareil photo du téléphone ou saisissez le code.";return;}
+   msg.className='';msg.textContent='';
+   navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false}).then(function(s){
+     stream=s;var v=document.getElementById('vid');v.srcObject=s;v.play().catch(function(){});
+     document.getElementById('scanBox').style.display='block';document.getElementById('scanBtn').style.display='none';
+     scanning=true;
+     if('BarcodeDetector' in window){try{detector=new BarcodeDetector({formats:['qr_code']});}catch(e){detector=null;}}
+     if(detector)loopNative(); else loadJsQr(loopJs);
+   }).catch(function(e){
+     msg.className='err';
+     msg.textContent=(e&&e.name==='NotAllowedError')?"Accès à la caméra refusé. Autorisez la caméra pour ce site dans les réglages du navigateur, ou saisissez le code.":"Impossible d'ouvrir la caméra. Saisissez le code ci-dessous.";
+   });
+ }
+ function found(text){ if(!scanning)return; stopScan(); go(text); }
+ function loopNative(){
+   if(!scanning)return;
+   var v=document.getElementById('vid');
+   detector.detect(v).then(function(c){ if(c&&c.length&&c[0].rawValue){found(c[0].rawValue);return;} setTimeout(loopNative,200); }).catch(function(){setTimeout(loopNative,300);});
+ }
+ function loopJs(){
+   if(!scanning)return;
+   var v=document.getElementById('vid');
+   if(v.readyState>=2&&v.videoWidth){
+     var cv=loopJs.cv||(loopJs.cv=document.createElement('canvas')), w=Math.min(640,v.videoWidth), h=Math.round(w*v.videoHeight/v.videoWidth);
+     cv.width=w;cv.height=h;var cx=cv.getContext('2d',{willReadFrequently:true});cx.drawImage(v,0,0,w,h);
+     var im=cx.getImageData(0,0,w,h), r=window.jsQR&&jsQR(im.data,w,h,{inversionAttempts:'dontInvert'});
+     if(r&&r.data){found(r.data);return;}
+   }
+   setTimeout(loopJs,150);
  }
  if(p.get('code')) go(p.get('code'));
+ else if(p.get('scan')) startScan();
 </script></body></html>

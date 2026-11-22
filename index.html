@@ -40,7 +40,8 @@
     <h1>📋 Enquêtes de satisfaction</h1>
     <p class="sub">Que voulez-vous faire ?</p>
     <div class="targets">
-      <a class="card" href="#niveau"><span class="emoji">📝</span><h3>Collecter des données</h3><p>Enquêter ou soumettre un questionnaire</p></a>
+      <a class="card" href="Acces.html?scan=1"><span class="emoji">📷</span><h3>Scanner le code QR de mon activité</h3><p>Enquêteur : le scan ouvre directement vos formulaires</p></a>
+      <a class="card" href="#niveau"><span class="emoji">📝</span><h3>Collecter des données</h3><p>Enquêter ou soumettre un questionnaire (saisie du code possible)</p></a>
       <a class="card" href="AdminDashboard.html"><span class="emoji">📊</span><h3>Tableau de bord</h3><p>Résultats de satisfaction selon votre compte et la période</p></a>
       <a class="card admin" href="AdminQR.html"><span class="emoji">⚙️</span><h3>Administration</h3><p>Codes d'accès, tableau de bord</p></a>
     </div>
@@ -71,14 +72,14 @@
   // href: null = formulaire pas encore disponible. code: true = code enquêteur requis (le personnel n'en a pas besoin).
   var LEVELS = {
     zone: {title: '🏘️ Zone sanitaire', sub: 'Centres de santé', cards: [
-      {e: '👩‍👦', t: 'Usagers (patients)', d: 'Satisfaction des usagers des centres de santé', href: 'FormUsagers.html', code: true},
+      {e: '👩‍👦', t: 'Usagers (patients)', d: 'Satisfaction des usagers des centres de santé', href: 'FormUsagers.html', code: true, key: 'usagers'},
       {e: '👩‍⚕️', t: 'Personnel soignant', d: 'Satisfaction du personnel des centres de santé', href: 'FormPersonnels.html', code: false},
-      {e: '👨‍👩‍👧‍👦', t: 'Membre COGECS', d: 'Satisfaction des membres du COGECS', href: 'FormCogecs.html', code: true}
+      {e: '👨‍👩‍👧‍👦', t: 'Membre COGECS', d: 'Satisfaction des membres du COGECS', href: 'FormCogecs.html', code: true, key: 'cogecs'}
     ]},
     hopital: {title: '🏥 Hôpital', sub: "Hôpital de zone", cards: [
-      {e: '🏥', t: "Usagers de l'hôpital", d: 'Satisfaction des usagers', href: 'FormUsagersHopital.html', code: true},
+      {e: '🏥', t: "Usagers de l'hôpital", d: 'Satisfaction des usagers', href: 'FormUsagersHopital.html', code: true, key: 'usagers'},
       {e: '🩺', t: "Personnel de l'hôpital", d: 'Satisfaction du personnel', href: 'FormPersonnelHopital.html', code: false},
-      {e: '🏘️', t: 'Communauté', d: 'Perception de la communauté', href: 'FormCommunauteHopital.html', code: true}
+      {e: '🏘️', t: 'Communauté', d: 'Perception de la communauté', href: 'FormCommunauteHopital.html', code: true, key: 'communaute'}
     ]}
   };
   function $(id){return document.getElementById(id);}
@@ -88,16 +89,27 @@
     var L = LEVELS[level], has = !!getQr(level);
     $('cTitle').textContent = L.title; $('cSub').textContent = L.sub;
     var acc = $('cAccess'); acc.innerHTML = '';
-    var left = el('span', '', has ? '🔑 Code enquêteur actif' + (getQrLabel(level) ? ' — <b></b>' : '') : '🔑 Aucun code enquêteur saisi');
+    var act = has ? getActivity(level) : null;
+    var left = el('span', '', has ? (act ? '📅 Activité' : '🔑 Code enquêteur actif') + (getQrLabel(level) ? ' — <b></b>' : '') : '🔑 Aucun code enquêteur saisi');
     if (has && getQrLabel(level)) left.querySelector('b').textContent = getQrLabel(level);
     var btns = el('span', 'btns');
+    var bs = el('button', '', '📷 Scanner'); bs.onclick = function(){ location.href = 'Acces.html?scan=1&level=' + level + '&next=' + encodeURIComponent('index.html#' + level); }; btns.appendChild(bs);
     var b1 = el('button', '', has ? 'Changer de code' : 'Saisir le code');
     b1.onclick = function(){ location.href = 'Acces.html?level=' + level + '&next=' + encodeURIComponent('index.html#' + level); };
     btns.appendChild(b1);
     if (has) { var b2 = el('button', '', 'Retirer'); b2.onclick = function(){ clearQr(level); renderCibles(level); }; btns.appendChild(b2); }
     acc.appendChild(left); acc.appendChild(btns);
     var box = $('cCards'); box.innerHTML = '';
+    var act2 = has ? getActivity(level) : null;
+    if (act2) {
+      var per = act2.debut || act2.fin ? ' · ' + (act2.debut ? 'du ' + act2.debut : '') + (act2.fin ? ' au ' + act2.fin : '') : '';
+      var info = el('div', 'access', ''); info.style.background = '#e6f6ee'; info.style.color = '#1a7f4b';
+      info.textContent = '📅 ' + act2.name + (act2.cible ? ' — ' + act2.cible : '') + per;
+      box.parentNode.insertBefore(info, box);
+      var old = document.getElementById('actInfo'); if (old) old.parentNode.removeChild(old); info.id = 'actInfo';
+    } else { var o2 = document.getElementById('actInfo'); if (o2) o2.parentNode.removeChild(o2); }
     L.cards.forEach(function(c){
+      if (act2 && c.code && !activityAllows(act2, c.key)) return;
       var a = el(c.href ? 'a' : 'div', 'card' + (c.href ? '' : ' off'));
       if (c.href) a.href = c.href;
       var tag = !c.href ? 'Bientôt disponible' : (!c.code ? '✅ Accès libre, sans code' : (has ? '✅ Code saisi' : '🔑 Code requis'));

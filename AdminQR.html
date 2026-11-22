@@ -25,7 +25,10 @@
  .code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:1.25rem;letter-spacing:.04em;word-break:break-all;background:#eef3f8;border-radius:8px;padding:8px 10px;margin:8px 0}
  .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
  .badge{font-size:.72rem;padding:2px 8px;border-radius:999px;background:#eef3f8;color:var(--brand);margin-left:6px}
- .badge.off{background:#fdecea;color:#c0392b}
+ .badge.off{background:#fdecea;color:#c0392b}.badge.ok{background:#e6f6ee;color:#1a7f4b}.badge.soon{background:#fff4e0;color:#b26a00}
+ .meta{color:#6b7280;font-size:.8rem;margin:4px 0 0}
+ .chk{display:flex;flex-wrap:wrap;gap:6px 14px;margin:6px 0}.chk label{display:flex;align-items:center;gap:6px;font-size:.85rem;color:#1f2937}.chk input{width:auto;margin:0}
+ select{border:1px solid #dfe4ea;background:#fff;width:100%;margin-top:8px}
  .qr{display:flex;justify-content:center;margin:10px 0}
  details summary{cursor:pointer;color:var(--brand);font-size:.85rem;margin-top:8px}
  #err{color:#c0392b;text-align:center;min-height:1.2em;font-size:.9rem}
@@ -33,7 +36,7 @@
  .add{display:grid;gap:8px}
  @media (min-width:700px){.add{grid-template-columns:2fr 1fr auto;align-items:end}.add input{margin-top:0}}
  label{font-size:.78rem;color:#6b7280;display:block}
- @media print{header,#login,.row,.add,.addBox,details summary{display:none}.box{box-shadow:none;border:1px solid #ccc;break-inside:avoid}}
+ @media print{body.one .box:not(.sel),body.one h2,body.one .hint,body.one #lkRow{display:none!important}body.one .sel .qr{margin:30px auto}body.one .sel .code{font-size:1.6rem;text-align:center}header,#login,.row,.add,.addBox,details summary{display:none}.box{box-shadow:none;border:1px solid #ccc;break-inside:avoid}}
 </style><link rel="manifest" href="manifest.json"><meta name="theme-color" content="#0f4c81"><link rel="icon" href="icon-192.png">
 </head><body>
 <header>
@@ -55,19 +58,33 @@
  </div>
  <div id="err"></div>
  <div id="panel" style="display:none">
-  <p class="hint">Un code sert à l'enquêteur pour enregistrer des données. Il le saisit (ou le scanne) <b>une seule fois</b>, puis il reste valable dans son niveau de travail. Le personnel n'a jamais besoin de code. Le <b>code général</b> marche pour tout le niveau ; un <b>code spécifique</b> est réservé à une zone sanitaire ou à un hôpital précis.</p>
+  <p class="hint">L'enquêteur <b>scanne le code QR de son activité</b> (ou saisit le code) : l'accès s'ouvre une seule fois, les réponses sont rattachées à l'activité. Créez une activité ci-dessous ; les codes par zone / hôpital et les codes généraux restent disponibles plus bas. Un code sert à l'enquêteur pour enregistrer des données. Il le saisit (ou le scanne) <b>une seule fois</b>, puis il reste valable dans son niveau de travail. Le personnel n'a jamais besoin de code. Le <b>code général</b> marche pour tout le niveau ; un <b>code spécifique</b> est réservé à une zone sanitaire ou à un hôpital précis.</p>
   <h2>🔗 Liens directs pour le personnel</h2>
   <div class="grid">
    <div class="box"><h3>👩‍⚕️ Personnel du centre de santé</h3><p class="hint">Ouvre uniquement ce formulaire, sans accès aux autres. Aucun code requis.</p><div class="code" id="lk-cs" style="font-size:.8rem"></div><div class="row"><button class="alt" onclick="lkCopy('cs')">📋 Copier</button><button class="alt" onclick="lkShare('cs')">📤 Partager</button><button class="alt" onclick="lkOpen('cs')">Ouvrir</button></div></div>
    <div class="box"><h3>🩺 Personnel de l'hôpital</h3><p class="hint">Ouvre uniquement ce formulaire, sans accès aux autres. Aucun code requis.</p><div class="code" id="lk-hop" style="font-size:.8rem"></div><div class="row"><button class="alt" onclick="lkCopy('hop')">📋 Copier</button><button class="alt" onclick="lkShare('hop')">📤 Partager</button><button class="alt" onclick="lkOpen('hop')">Ouvrir</button></div></div>
   </div>
-  <h2>🏘️ Zones sanitaires</h2><div class="grid" id="list-zone"></div>
+  <h2>📅 Activités — un code QR par activité</h2>
+  <p class="hint">Chaque activité a son propre QR : il ouvre à l'enquêteur uniquement les formulaires prévus, rattache ses réponses à l'activité (colonne « Activité » dans Google Sheets) et, si vous cochez une seule commune, la présélectionne dans le formulaire. L'accès se ferme à la date de fin (les réponses déjà enregistrées hors connexion sont encore acceptées 1 jour).</p>
+  <div class="grid" id="list-act"></div>
+  <div class="box addBox" id="actForm"><h3 id="actFormTitle">Créer une activité</h3>
+   <label>Nom de l'activité</label><input id="a-name" placeholder="Ex. Enquête usagers ZS Zobozah — novembre 2026">
+   <div class="grid" style="margin-top:6px">
+    <div><label>Niveau</label><select id="a-level" onchange="actLevelChange()"><option value="zone">Zone sanitaire (centres de santé)</option><option value="hopital">Hôpital</option></select></div>
+    <div><label>Zone sanitaire / hôpital concerné</label><input id="a-cible" list="dl-zone" placeholder="Ex. Zobozah"></div>
+   </div>
+   <label style="margin-top:10px">Formulaires ouverts (aucun coché = tous)</label><div class="chk" id="a-forms"></div>
+   <div id="a-comm-box"><label>Communes (facultatif — une seule = présélectionnée dans le formulaire)</label><div class="chk" id="a-comm"></div></div>
+   <div class="grid" style="margin-top:6px"><div><label>Début (facultatif)</label><input id="a-debut" type="date"></div><div><label>Fin (facultatif)</label><input id="a-fin" type="date"></div></div>
+   <div class="row"><button class="pri" onclick="saveAct()">Enregistrer l'activité</button><button class="alt" id="a-cancel" style="display:none" onclick="resetActForm()">Annuler la modification</button></div>
+  </div>
+  <h2>🏘️ Codes par zone sanitaire</h2><div class="grid" id="list-zone"></div>
   <div class="box addBox"><h3>Ajouter un code pour une zone sanitaire</h3>
    <div class="add"><div><label>Nom de la zone sanitaire</label><input id="n-zone" list="dl-zone" placeholder="Ex. Djidja-Abomey-Agbangnizoun"></div>
    <div><label>Code (vide = généré)</label><input id="c-zone" placeholder="Optionnel" autocapitalize="characters"></div>
    <button class="pri" onclick="add('zone')">Créer</button></div></div>
   <datalist id="dl-zone"></datalist>
-  <h2>🏥 Hôpitaux</h2><div class="grid" id="list-hopital"></div>
+  <h2>🏥 Codes par hôpital</h2><div class="grid" id="list-hopital"></div>
   <div class="box addBox"><h3>Ajouter un code pour un hôpital</h3>
    <div class="add"><div><label>Nom de l'hôpital</label><input id="n-hopital" placeholder="Ex. Hôpital de zone de Zinvié"></div>
    <div><label>Code (vide = généré)</label><input id="c-hopital" placeholder="Optionnel" autocapitalize="characters"></div>
@@ -111,6 +128,7 @@
  }
  function api(action,data){data=data||{};data.token=tok;return callApi(action,data).then(function(r){if(!r||!r.ok){throw new Error(r&&r.error||'Erreur');}return r;});}
  function load(){
+  loadActs();
   api('listAccessCodes').then(function(r){
    items=r.codes;
    $('dl-zone').innerHTML=(r.zones||[]).map(function(z){return '<option value="'+esc(z)+'">';}).join('');
@@ -160,6 +178,79 @@
   else if(a==='del'){if(!confirm('Supprimer '+who+' ? Les enquêteurs qui l\'utilisent perdront l\'accès.'))return;
    api('deleteAccessCode',{level:it.level,name:it.name}).then(function(){toast('Supprimé');load();}).catch(function(e){err(e.message);});}
  });
+
+ /* ---------- Activités ---------- */
+ var acts=[], editId='';
+ var COMMUNES_ALL=['Abomey','Agbangnizoun','Djidja','Bohicon','Za-Kpota','Zogbodomey','Covè','Zagnanado','Ouinhi'];
+ var FORMS_BY={zone:[['usagers','Usagers (patients)'],['cogecs','Membres COGECS']],hopital:[['usagers',"Usagers de l'hôpital"],['communaute','Communauté']]};
+ function today(){var d=new Date();return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);}
+ function frDate(s){return s?s.split('-').reverse().join('/'):'';}
+ function actLevelChange(sel){
+  var lv=$('a-level').value;
+  $('a-forms').innerHTML=FORMS_BY[lv].map(function(f){return '<label><input type="checkbox" value="'+f[0]+'"'+(sel&&sel.forms&&sel.forms.indexOf(f[0])>-1?' checked':'')+'>'+esc(f[1])+'</label>';}).join('');
+  $('a-comm-box').style.display=lv==='zone'?'block':'none';
+  $('a-comm').innerHTML=COMMUNES_ALL.map(function(c){return '<label><input type="checkbox" value="'+esc(c)+'"'+(sel&&sel.communes&&sel.communes.indexOf(c)>-1?' checked':'')+'>'+esc(c)+'</label>';}).join('');
+ }
+ function checked(id){return Array.prototype.map.call($(id).querySelectorAll('input:checked'),function(i){return i.value;});}
+ function resetActForm(){
+  editId='';$('a-name').value='';$('a-cible').value='';$('a-debut').value='';$('a-fin').value='';$('a-level').value='zone';actLevelChange();
+  $('actFormTitle').textContent='Créer une activité';$('a-cancel').style.display='none';
+ }
+ function loadActs(){
+  api('listActivities').then(function(r){acts=r.activities||[];if(r.zones)$('dl-zone').innerHTML=r.zones.map(function(z){return '<option value="'+esc(z)+'">';}).join('');drawActs();}).catch(function(e){err(e.message);});
+ }
+ function actState(a){
+  var t=today();
+  if(!a.active)return ['Désactivée','off'];
+  if(a.debut&&t<a.debut)return ['À venir','soon'];
+  if(a.fin&&t>a.fin)return ['Terminée','off'];
+  return ['En cours','ok'];
+ }
+ function drawActs(){
+  var box=$('list-act');box.innerHTML='';
+  if(!acts.length){box.innerHTML='<p class="hint">Aucune activité pour le moment. Créez-en une avec le formulaire ci-dessous.</p>';return;}
+  acts.forEach(function(a,i){
+   var st=actState(a),d=document.createElement('div');d.className='box';d.style.margin='0';
+   var forms=(a.forms&&a.forms.length)?a.forms.map(function(k){var f=FORMS_BY[a.level].filter(function(x){return x[0]===k;})[0];return f?f[1]:k;}).join(', '):'Tous les formulaires à code';
+   var per=(a.debut||a.fin)?(a.debut?'du '+frDate(a.debut):'')+(a.fin?' au '+frDate(a.fin):''):'Sans limite de dates';
+   d.innerHTML='<h3>'+esc(a.name)+'<span class="badge '+st[1]+'">'+st[0]+'</span></h3>'+
+    '<p class="meta">'+(a.level==='hopital'?'🏥 Hôpital':'🏘️ Zone sanitaire')+(a.cible?' · '+esc(a.cible):'')+'</p>'+
+    '<p class="meta">'+esc(forms)+(a.communes&&a.communes.length?' · '+esc(a.communes.join(', ')):'')+'</p>'+
+    '<p class="meta">'+per+'</p>'+
+    '<div class="qr" id="aqr'+i+'"></div><div class="code" style="text-align:center">'+esc(a.code)+'</div>'+
+    '<div class="row"><button class="alt" data-act="share" data-i="'+i+'">Partager</button><button class="alt" data-act="print" data-i="'+i+'">Imprimer</button>'+
+    '<button class="alt" data-act="edit" data-i="'+i+'">Modifier</button><button class="alt" data-act="renew" data-i="'+i+'">Nouveau code</button>'+
+    '<button class="alt" data-act="toggle" data-i="'+i+'">'+(a.active?'Désactiver':'Activer')+'</button><button class="dng" data-act="del" data-i="'+i+'">Supprimer</button></div>';
+   box.appendChild(d);
+   try{new QRCode($('aqr'+i),{text:linkOf(a.code),width:200,height:200});}catch(e){}
+  });
+ }
+ function saveAct(extra){
+  var a={id:editId,name:$('a-name').value.trim(),level:$('a-level').value,cible:$('a-cible').value.trim(),forms:checked('a-forms'),communes:$('a-level').value==='zone'?checked('a-comm'):[],debut:$('a-debut').value,fin:$('a-fin').value};
+  if(!a.name){err("Indiquez le nom de l'activité.");return;}
+  err('');api('saveActivity',{activity:a}).then(function(){toast(editId?'Activité modifiée':'Activité créée');resetActForm();loadActs();}).catch(function(e){err(e.message);});
+ }
+ document.addEventListener('click',function(ev){
+  var b=ev.target.closest('button[data-act]');if(!b)return;
+  var a=acts[+b.dataset.i],k=b.dataset.act;
+  if(k==='share'){
+   var txt="Activité : "+a.name+(a.cible?' — '+a.cible:'')+"\nScannez le code QR remis, ou ouvrez ce lien :\n"+linkOf(a.code)+"\nCode : "+a.code;
+   if(navigator.share)navigator.share({title:"Activité d'enquête — "+a.name,text:txt}).catch(function(){});
+   else if(navigator.clipboard){navigator.clipboard.writeText(txt).then(function(){toast('Copié');});}
+   else prompt('Copiez :',txt);
+  }
+  else if(k==='print'){var card=b.closest('.box');card.classList.add('sel');document.body.classList.add('one');setTimeout(function(){window.print();setTimeout(function(){card.classList.remove('sel');document.body.classList.remove('one');},500);},200);}
+  else if(k==='edit'){
+   editId=a.id;$('a-name').value=a.name;$('a-level').value=a.level;actLevelChange(a);$('a-cible').value=a.cible||'';$('a-debut').value=a.debut||'';$('a-fin').value=a.fin||'';
+   $('actFormTitle').textContent="Modifier l'activité (le code QR ne change pas)";$('a-cancel').style.display='inline-block';$('actForm').scrollIntoView({behavior:'smooth'});
+  }
+  else if(k==='renew'){if(!confirm("Générer un nouveau code pour « "+a.name+" » ? L'ancien QR cessera de fonctionner : réimprimez-le et rediffusez-le."))return;
+   api('saveActivity',{activity:{id:a.id,name:a.name,level:a.level,cible:a.cible,forms:a.forms,communes:a.communes,debut:a.debut,fin:a.fin,renew:true}}).then(function(){toast('Nouveau code créé');loadActs();}).catch(function(e){err(e.message);});}
+  else if(k==='toggle'){api('setActivityActive',{id:a.id,active:!a.active}).then(function(){loadActs();}).catch(function(e){err(e.message);});}
+  else if(k==='del'){if(!confirm("Supprimer l'activité « "+a.name+" » ? Les enquêteurs qui l'utilisent perdront l'accès (les réponses déjà enregistrées restent dans Google Sheets)."))return;
+   api('deleteActivity',{id:a.id}).then(function(){toast('Supprimée');loadActs();}).catch(function(e){err(e.message);});}
+ });
+ actLevelChange();
  function add(lv){
   var n=$('n-'+lv).value.trim(),c=$('c-'+lv).value.trim();
   if(!n){err('Indiquez le nom.');return;}

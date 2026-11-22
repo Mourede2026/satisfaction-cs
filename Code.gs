@@ -27,6 +27,16 @@ function doPost(e) {
     var body = JSON.parse(e.postData.contents), action = body.action, d = body.data || {};
     var need = QR_GUARD[action], cid = d._cid, isSubmit = /^submit/.test(action);
     if (need && !qrTokenValid_(body.qr, need)) return json_({ ok: false, error: 'QR_INVALID' });
+    if (isSubmit) {
+      // Colonnes d'activité : posées uniquement par le serveur à partir du code scanné (jamais par le client)
+      delete d[ACT_COL]; delete d[ACT_ID_COL];
+      var act = need ? activityByCode_(body.qr) : null;
+      if (act) {
+        var fk = FORM_KEY_[action];
+        if (act.forms.length && fk && act.forms.indexOf(fk) === -1) return json_({ ok: false, error: 'FORM_NOT_ALLOWED' });
+        d[ACT_COL] = act.name; d[ACT_ID_COL] = act.id;
+      }
+    }
     if (isSubmit && dejaRecu_(cid)) return json_({ ok: true, duplicate: true });
     if (action === "submitUsagers") out = appendRecord_(SHEET_USAGERS, d);
     else if (action === "submitPersonnels") out = appendRecord_(SHEET_PERSONNELS, d);
@@ -39,6 +49,10 @@ function doPost(e) {
     else if (action === "saveAccessCode") out = handleSaveAccessCode(d.token, d.level, d.name, d.code);
     else if (action === "setAccessCodeActive") out = handleSetAccessCodeActive(d.token, d.level, d.name, d.active);
     else if (action === "deleteAccessCode") out = handleDeleteAccessCode(d.token, d.level, d.name);
+    else if (action === "listActivities") out = handleListActivities(d.token);
+    else if (action === "saveActivity") out = handleSaveActivity(d.token, d.activity);
+    else if (action === "setActivityActive") out = handleSetActivityActive(d.token, d.id, d.active);
+    else if (action === "deleteActivity") out = handleDeleteActivity(d.token, d.id);
     else if (action === "getDashboardData") out = getDashboardData(d.token, d.filter);
     else if (action === "listPeriods") out = handleListPeriods(d.token);
     else if (action === "savePeriod") out = handleSavePeriod(d.token, d.period);
@@ -83,11 +97,13 @@ function appendRecord_(sheetName, data, keyColumnName) {
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
     if (!sheet) throw new Error("Feuille introuvable: " + sheetName);
     var hm = buildHeaderMap_(sheet), keyCol = hm.map[keyColumnName];
-    if (!hm.map[DATE_COLUMN]) {
-      sheet.getRange(1, hm.lastCol + 1).setValue(DATE_COLUMN);
+    var cols_ = [DATE_COLUMN]; if (data[ACT_COL]) cols_.push(ACT_COL, ACT_ID_COL);
+    cols_.forEach(function (nm) {
+      if (hm.map[nm]) return;
+      sheet.getRange(1, hm.lastCol + 1).setValue(nm);
       try { sheet.getRange(2, hm.lastCol + 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('@'); } catch (e) {}
       hm = buildHeaderMap_(sheet);
-    }
+    });
     data[DATE_COLUMN] = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
     if (!keyCol) throw new Error("Colonne clé '" + keyColumnName + "' introuvable dans " + sheetName);
     var row = getNextRow_(sheet, keyCol), rowValues = new Array(hm.lastCol).fill("");
@@ -530,7 +546,9 @@ function qrTokenValid_(token, roles) {
     var r = findQrRow_(roles[i]); if (r && String(r.token).trim() === token) return true;
     if (roles[i] === 'enqueteur') levels.zone = 1; else if (roles[i] === 'enqueteur_hopital') levels.hopital = 1;
   }
-  return accessCodesRows_().some(function (c) { return levels[c.level] && c.active && c.code === token; });
+  if (accessCodesRows_().some(function (c) { return levels[c.level] && c.active && c.code === token; })) return true;
+  var a = activityByCode_(token);
+  return !!(a && levels[a.level]);
 }
 function handleGetQrToken(sessionToken, role) {
   var c = requireAdminSession_(sessionToken); if (!c.ok) return c;
@@ -582,6 +600,14 @@ function handleMatchQrCode(rawText) {
   for (var j = 0; j < rows.length; j++) {
     if (rows[j].code === cand && rows[j].active) return { ok: true, role: rows[j].level === 'hopital' ? 'enqueteur_hopital' : 'enqueteur', level: rows[j].level, label: rows[j].name };
   }
+  var acts = activitiesRows_(), up = cand.toUpperCase(), today = day_(new Date());
+  for (var k = 0; k < acts.length; k++) {
+    var a = acts[k]; if (a.code.toUpperCase() !== up) continue;
+    if (!a.active) return { ok: false, error: "Cette activité est désactivée. Demandez à l'administrateur." };
+    if (a.debut && today < a.debut) return { ok: false, error: "Cette activité commence le " + a.debut + "." };
+    if (a.fin && today > a.fin) return { ok: false, error: "Cette activité est terminée (fin le " + a.fin + ")." };
+    return { ok: true, role: a.level === 'hopital' ? 'enqueteur_hopital' : 'enqueteur', level: a.level, label: a.name + (a.cible ? ' — ' + a.cible : ''), activity: activityPublic_(a) };
+  }
   return { ok: false, error: "Ce code ne correspond à aucune cible active." };
 }
 
@@ -596,8 +622,9 @@ function accessCodesRows_() {
   return out;
 }
 function levelRole_(level) { return level === 'hopital' ? 'enqueteur_hopital' : 'enqueteur'; }
-function codeEnUsage_(code, exceptRow, exceptRole) {
+function codeEnUsage_(code, exceptRow, exceptRole, exceptActRow) {
   code = String(code).trim();
+  if (activitiesRows_().some(function (a) { return a.code.toUpperCase() === code.toUpperCase() && a.row !== exceptActRow; })) return true;
   var general = QR_ROLES.some(function (r) { var q = findQrRow_(r); return r !== exceptRole && q && String(q.token).trim() === code; });
   return general || accessCodesRows_().some(function (r) { return r.code === code && r.row !== exceptRow; });
 }
@@ -648,6 +675,87 @@ function handleDeleteAccessCode(token, level, name) {
   var c = requireAdminSession_(token); if (!c.ok) return c;
   var f = findSpecificCode_(level, name); if (!f) return { ok: false, error: 'Code introuvable.' };
   codesSheet_().deleteRow(f.row);
+  return { ok: true };
+}
+
+/* ---------- Activités : un code QR par activité ---------- */
+var ACT_SHEET_NAME = 'Activites', ACT_COL = 'Activité', ACT_ID_COL = 'IdActivité';
+var ACT_HEADERS = ['ID', 'Activité', 'Niveau', 'Cible', 'Formulaires', 'Communes', 'Début', 'Fin', 'Code', 'Actif', 'Créée le'];
+var ACT_FORMS = { zone: ['usagers', 'cogecs'], hopital: ['usagers', 'communaute'] };
+var FORM_KEY_ = { submitUsagers: 'usagers', submitCogecs: 'cogecs', submitUsagersHopital: 'usagers', submitCommunauteHopital: 'communaute' };
+var ACT_GRACE_DAYS = 1; // les réponses d'un enquêteur hors connexion restent acceptées 1 jour après la fin
+function actSheet_() { return getOrCreateSheet_(ACT_SHEET_NAME, ACT_HEADERS); }
+function csvList_(v) { return String(v || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean); }
+function activitiesRows_() {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ACT_SHEET_NAME);
+  if (!sh || sh.getLastRow() < 2) return [];
+  var v = sh.getDataRange().getValues(), out = [];
+  for (var i = 1; i < v.length; i++) {
+    if (!v[i][0] || v[i][8] === '') continue;
+    out.push({ row: i + 1, id: String(v[i][0]), name: String(v[i][1]), level: String(v[i][2]), cible: String(v[i][3] || ''), forms: csvList_(v[i][4]), communes: csvList_(v[i][5]), debut: day_(v[i][6]), fin: day_(v[i][7]), code: String(v[i][8]).trim(), active: v[i][9] !== 'NON' });
+  }
+  return out;
+}
+function dayPlus_(s, n) {
+  var m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})$/); if (!m) return s;
+  return Utilities.formatDate(new Date(+m[1], +m[2] - 1, +m[3] + n, 12, 0, 0), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+}
+/** Activité active correspondant au code, dans sa période (la fin est prolongée de ACT_GRACE_DAYS jour pour l'envoi). */
+function activityByCode_(code) {
+  code = String(code || '').trim().toUpperCase(); if (!code) return null;
+  var today = day_(new Date()), f = null;
+  activitiesRows_().forEach(function (a) {
+    if (a.code.toUpperCase() !== code || !a.active) return;
+    if (a.debut && today < a.debut) return;
+    if (a.fin && today > dayPlus_(a.fin, ACT_GRACE_DAYS)) return;
+    f = a;
+  });
+  return f;
+}
+function activityPublic_(a) { return { id: a.id, name: a.name, level: a.level, cible: a.cible, forms: a.forms, communes: a.communes, debut: a.debut, fin: a.fin }; }
+function handleListActivities(token) {
+  var c = requireAdminSession_(token); if (!c.ok) return c;
+  actSheet_();
+  var zones = {}, sh = accountsSheet_();
+  if (sh) { var v = sh.getDataRange().getValues(); for (var i = 1; i < v.length; i++) if (v[i][4]) zones[String(v[i][4])] = 1; }
+  return { ok: true, activities: activitiesRows_().map(function (a) { var p = activityPublic_(a); p.code = a.code; p.active = a.active; return p; }), zones: Object.keys(zones).sort() };
+}
+/** Crée (sans id) ou modifie (avec id) une activité. renew = true : nouveau code. */
+function handleSaveActivity(token, p) {
+  var c = requireAdminSession_(token); if (!c.ok) return c;
+  p = p || {};
+  var name = String(p.name || '').trim().slice(0, 80), level = p.level, cible = String(p.cible || '').trim().slice(0, 80);
+  if (!name) return { ok: false, error: "Indiquez le nom de l'activité." };
+  if (level !== 'zone' && level !== 'hopital') return { ok: false, error: 'Niveau inconnu.' };
+  var okForms = ACT_FORMS[level], forms = (p.forms || []).filter(function (f) { return okForms.indexOf(f) > -1; });
+  var communes = level === 'zone' ? (p.communes || []).map(function (x) { return String(x).replace(/,/g, ' ').trim(); }).filter(Boolean) : [];
+  var rx = /^\d{4}-\d{2}-\d{2}$/, debut = String(p.debut || ''), fin = String(p.fin || '');
+  if ((debut && !rx.test(debut)) || (fin && !rx.test(fin))) return { ok: false, error: 'Date invalide.' };
+  if (debut && fin && fin < debut) return { ok: false, error: 'La date de fin précède la date de début.' };
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    var ex = null; activitiesRows_().forEach(function (a) { if (p.id && a.id === p.id) ex = a; });
+    if (p.id && !ex) return { ok: false, error: 'Activité introuvable.' };
+    var code = ex ? ex.code : '';
+    if (!code || p.renew) { do { code = Utilities.getUuid().replace(/-/g, '').slice(0, 8).toUpperCase(); } while (codeEnUsage_(code, 0, '', ex ? ex.row : 0)); }
+    var sh = actSheet_(), row = ex ? ex.row : sh.getLastRow() + 1;
+    var active = ex ? (ex.active ? 'OUI' : 'NON') : 'OUI';
+    sh.getRange(row, 1, 1, ACT_HEADERS.length).setNumberFormat('@').setValues([[ex ? ex.id : 'A' + Utilities.getUuid().replace(/-/g, '').slice(0, 6).toUpperCase(), name, level, cible, forms.join(','), communes.join(','), debut, fin, code, active, new Date().toISOString()]]);
+    return { ok: true, code: code };
+  } finally { lock.releaseLock(); }
+}
+function handleSetActivityActive(token, id, active) {
+  var c = requireAdminSession_(token); if (!c.ok) return c;
+  var f = null; activitiesRows_().forEach(function (a) { if (a.id === id) f = a; });
+  if (!f) return { ok: false, error: 'Activité introuvable.' };
+  actSheet_().getRange(f.row, 10).setNumberFormat('@').setValue(active ? 'OUI' : 'NON');
+  return { ok: true };
+}
+function handleDeleteActivity(token, id) {
+  var c = requireAdminSession_(token); if (!c.ok) return c;
+  var f = null; activitiesRows_().forEach(function (a) { if (a.id === id) f = a; });
+  if (!f) return { ok: false, error: 'Activité introuvable.' };
+  actSheet_().deleteRow(f.row);
   return { ok: true };
 }
 

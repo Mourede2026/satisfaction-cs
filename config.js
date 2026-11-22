@@ -36,8 +36,14 @@ function setQr(level, token, label) {
   localStorage.setItem(QR_KEYS[level] + "_label", label || "");
 }
 function clearQr(level) {
-  localStorage.removeItem(QR_KEYS[level]); localStorage.removeItem(QR_KEYS[level] + "_label");
+  localStorage.removeItem(QR_KEYS[level]); localStorage.removeItem(QR_KEYS[level] + "_label"); localStorage.removeItem(QR_KEYS[level] + "_act");
 }
+// Activité scannée (nom, cible, formulaires autorisés, communes, dates) : mémorisée avec le code
+function getActivity(level) { try { return JSON.parse(localStorage.getItem(QR_KEYS[level || pageLevel()] + "_act") || "null"); } catch (e) { return null; } }
+function setActivity(level, a) { if (a) localStorage.setItem(QR_KEYS[level] + "_act", JSON.stringify(a)); else localStorage.removeItem(QR_KEYS[level] + "_act"); }
+// Clé de formulaire (pour restreindre ce qu'une activité autorise)
+function formKeyOf(file) { return /Cogecs/i.test(file) ? "cogecs" : /Communaute/i.test(file) ? "communaute" : /Usagers/i.test(file) ? "usagers" : ""; }
+function activityAllows(a, key) { return !a || !a.forms || !a.forms.length || a.forms.indexOf(key) > -1; }
 
 function callApi(action, data, password) {
   if (!apiUrl() || apiUrl().indexOf("COLLEZ_ICI") !== -1) {
@@ -69,6 +75,9 @@ function callApi(action, data, password) {
 (function () {
   if (!/Form(?!Personnel)[A-Za-z]*\.html$/.test(location.pathname)) return;
   var level = pageLevel(), here = location.pathname.split("/").pop();
+  // Une activité qui n'autorise pas ce formulaire : retour à la liste des formulaires de l'activité
+  var act0 = getActivity(level);
+  if (act0 && !activityAllows(act0, formKeyOf(here))) { location.replace("index.html#" + level); return; }
   var to = function (extra) { return "Acces.html?level=" + level + "&next=" + encodeURIComponent(here) + (extra || ""); };
   window.qrExit = function () { clearQr(level); location.replace(to("&expired=1")); };
   if (!getQr(level)) { location.replace(to()); return; }
@@ -81,6 +90,24 @@ function callApi(action, data, password) {
   verify();
   setInterval(verify, 60000);
 })();
+
+// Bandeau « Activité » en haut des formulaires d'enquête + restriction de la commune quand l'activité en désigne
+document.addEventListener("DOMContentLoaded", function () {
+  if (!/Form(?!Personnel)[A-Za-z]*\.html$/.test(location.pathname)) return;
+  var a = getActivity(); if (!a) return;
+  var d = document.createElement("div");
+  d.style.cssText = "background:#e6f6ee;color:#1a7f4b;padding:8px 14px;font-size:.85rem;text-align:center";
+  d.textContent = "📅 Activité : " + a.name + (a.cible ? " — " + a.cible : "");
+  var anchor = document.getElementById("status-banner") || document.querySelector("main");
+  if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(d, anchor);
+});
+// À appeler après chaque rendu du formulaire (zone sanitaire) : limite la liste des communes à celles de l'activité ; une seule = présélectionnée
+function applyActivityToForm() {
+  var a = getActivity("zone"); if (!a || !a.communes || !a.communes.length) return;
+  var sel = document.getElementById("sel_commune"); if (!sel) return;
+  for (var i = sel.options.length - 1; i >= 1; i--) if (a.communes.indexOf(sel.options[i].value) === -1) sel.remove(i);
+  if (a.communes.length === 1 && sel.options.length === 2) { sel.selectedIndex = 1; if (typeof onCommuneChange === "function") onCommuneChange(sel.value); }
+}
 
 if ('serviceWorker' in navigator) { window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); }); }
 
