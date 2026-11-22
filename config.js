@@ -1,5 +1,8 @@
 // Configuration + accès enquêteur par code (un code par niveau : zone sanitaire / hôpital)
-const API_URL = "https://script.google.com/macros/s/AKfycbwjB6aW_ksTbTJgf2n7-VXh7d2FPuTVQov8m6ZijLN5OPPSj4kEFqU1w08HowBs-GcWAw/exec";
+const API_URL_DEFAULT = "https://script.google.com/macros/s/AKfycbwjB6aW_ksTbTJgf2n7-VXh7d2FPuTVQov8m6ZijLN5OPPSj4kEFqU1w08HowBs-GcWAw/exec";
+// L'adresse du serveur peut être corrigée depuis la page Administration (stockée sur l'appareil)
+function apiUrl() { return localStorage.getItem("api_url") || API_URL_DEFAULT; }
+const API_URL = API_URL_DEFAULT;
 const QR_KEYS = { zone: "qr_token_zone", hopital: "qr_token_hopital" };
 const QR_KEY = QR_KEYS.zone; // compatibilité
 
@@ -28,11 +31,11 @@ function clearQr(level) {
 }
 
 function callApi(action, data, password) {
-  if (!API_URL || API_URL.indexOf("COLLEZ_ICI") !== -1) {
+  if (!apiUrl() || apiUrl().indexOf("COLLEZ_ICI") !== -1) {
     return Promise.reject(new Error("API_URL non configurée : modifiez config.js"));
   }
   if (/^submit/.test(action) && data && !data._cid) data._cid = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(16).slice(2);
-  return fetch(API_URL, {
+  return fetch(apiUrl(), {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify({ action: action, data: data, password: password, qr: getQr() })

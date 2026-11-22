@@ -329,6 +329,15 @@ function effacerMotsDePasse() {
   var s = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ACCOUNTS_SHEET_NAME);
   if (s && s.getLastRow() > 1 && s.getLastColumn() >= 10) s.getRange(2, 10, s.getLastRow() - 1, 1).clearContent();
 }
+/** Colonne dont le titre (ligne 1) est exactement « MotDePasseInitial » : index base 0, ou -1 si absente.
+ *  Repérée par son titre pour ne jamais prendre une autre colonne (ex. nom d'hôpital) pour un mot de passe. */
+function pwdColIndex_() {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ACCOUNTS_SHEET_NAME);
+  if (!sh || sh.getLastColumn() < 1) return -1;
+  var h = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  for (var i = 0; i < h.length; i++) if (String(h[i]).trim() === 'MotDePasseInitial') return i;
+  return -1;
+}
 var ACCOUNTS_HEADERS = ['Identifiant', 'Hash', 'Niveau', 'Département', 'Zone Sanitaire', 'Commune', 'Libellé', 'DernièreModification', 'Actif', '', 'MotDePasseInitial'];
 function findAccountRow_(username) {
   var sh = getOrCreateSheet_(ACCOUNTS_SHEET_NAME, ACCOUNTS_HEADERS);
@@ -364,12 +373,12 @@ function handleAccountLogin(username, password) {
   if (f.data[8] === 'NON') return { ok: false, error: 'Ce compte a été désactivé par un administrateur.' };
   // Mot de passe saisi directement dans la feuille « Comptes » (colonne K « MotDePasseInitial ») :
   // vérifié une fois, converti en empreinte (hash) puis effacé de la feuille.
-  var plain = f.data[10] === undefined || f.data[10] === null ? '' : String(f.data[10]).trim();
+  var pc = pwdColIndex_(), plain = pc < 0 || f.data[pc] === undefined || f.data[pc] === null ? '' : String(f.data[pc]).trim();
   if (plain) {
     if (String(password).trim() !== plain) { loginEchec_(username); return { ok: false, error: 'Identifiant ou mot de passe incorrect.' }; }
     var sh = accountsSheet_();
     sh.getRange(f.row, 2).setValue(sha256Hex_(String(f.data[0]).trim() + ':' + String(password).trim()));
-    sh.getRange(f.row, 11).clearContent();
+    sh.getRange(f.row, pc + 1).clearContent();
     f.data[0] = String(f.data[0]).trim();
   } else if (sha256Hex_(String(f.data[0]).trim() + ':' + password) !== f.data[1]) { loginEchec_(username); return { ok: false, error: 'Identifiant ou mot de passe incorrect.' }; }
   return { ok: true, token: createSession_(String(f.data[0]).trim()), account: accountPublicView_(f.data) };

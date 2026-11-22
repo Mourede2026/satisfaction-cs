@@ -7,10 +7,8 @@
 6. Ne publiez jamais `Code.gs` dans le dépôt public.
 
 ## Créer ou réinitialiser un compte directement dans Google Sheets
-Feuille `Comptes` : ajoutez une ligne (ou modifiez la ligne existante) :
-- A `Identifiant` = admin · C `Niveau` = admin · I `Actif` = OUI · **K `MotDePasseInitial` = le mot de passe choisi**
-- Laissez B (`Hash`) vide ou inchangé.
-À la première connexion, l'application vérifie ce mot de passe, le transforme en empreinte sécurisée et **efface la colonne K**.
+Feuille `Comptes` : ajoutez **à droite de la dernière colonne utilisée** une colonne dont le titre (ligne 1) est exactement `MotDePasseInitial`. Puis, sur la ligne du compte (ex. `admin`, Niveau `admin`, Actif `OUI`), tapez le mot de passe choisi dans cette colonne.
+À la première connexion, l'application vérifie ce mot de passe, le transforme en empreinte sécurisée et **efface la cellule**. Seule cette colonne (repérée par son titre) est lue ; aucune autre colonne n'est jamais prise pour un mot de passe.
 
 ## Formulaires hôpital (3)
 `FormUsagersHopital.html`, `FormPersonnelHopital.html` (libre, sans code) et `FormCommunauteHopital.html`, générés à partir de vos fichiers XLSForm, avec `hform.js` (moteur commun). Les acteurs communautaires ont été retirés (formulaire, feuille, route serveur).

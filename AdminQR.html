@@ -46,6 +46,12 @@
   <input id="u" placeholder="Identifiant" autocomplete="username">
   <input id="p" type="password" placeholder="Mot de passe" autocomplete="current-password" onkeydown="if(event.key==='Enter')login()">
   <button class="pri" style="width:100%;margin-top:12px" onclick="login()">Se connecter</button>
+  <details style="margin-top:14px"><summary>Problème de connexion ? Tester le serveur</summary>
+   <p class="hint" style="margin-top:8px">Adresse du déploiement Apps Script (se termine par <b>/exec</b>) :</p>
+   <input id="srv" placeholder="https://script.google.com/macros/s/…/exec">
+   <div class="row"><button class="alt" onclick="testSrv()">Tester</button><button class="alt" onclick="saveSrv()">Utiliser cette adresse</button><button class="alt" onclick="resetSrv()">Adresse d'origine</button></div>
+   <div id="srvMsg" class="hint" style="margin-top:8px;word-break:break-word"></div>
+  </details>
  </div>
  <div id="err"></div>
  <div id="panel" style="display:none">
@@ -70,6 +76,19 @@
  function $(i){return document.getElementById(i);}
  function err(t){$('err').textContent=t||'';}
  function toast(t){var x=$('toast');x.textContent=t;x.style.display='block';setTimeout(function(){x.style.display='none';},2200);}
+ $('srv').value=apiUrl();
+ function srvOk(u){return /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(u);}
+ function testSrv(){
+  var u=$('srv').value.trim(),m=$('srvMsg');
+  if(!srvOk(u)){m.textContent="Adresse invalide : elle doit ressembler à https://script.google.com/macros/s/…/exec";return;}
+  m.textContent='Test en cours…';
+  fetch(u).then(function(r){return r.text();}).then(function(t){
+   try{var j=JSON.parse(t);m.textContent=j.ok?'✅ Le serveur répond : '+j.message:'⚠️ Réponse inattendue.';}
+   catch(e){m.textContent="⚠️ Le serveur répond mais pas en JSON : le déploiement demande probablement une connexion Google. Redéployez avec « Qui a accès : Tout le monde ».";}
+  }).catch(function(){m.textContent="❌ Serveur injoignable depuis ce navigateur : adresse erronée, déploiement supprimé ou accès non public.";});
+ }
+ function saveSrv(){var u=$('srv').value.trim();if(!srvOk(u)){$('srvMsg').textContent='Adresse invalide.';return;}localStorage.setItem('api_url',u);$('srvMsg').textContent='✅ Adresse enregistrée sur cet appareil. Reconnectez-vous.';}
+ function resetSrv(){localStorage.removeItem('api_url');$('srv').value=apiUrl();$('srvMsg').textContent="Adresse d'origine rétablie.";}
  function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
  function login(){
   err('Connexion…');
