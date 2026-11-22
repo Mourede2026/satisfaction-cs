@@ -100,6 +100,7 @@
 </main>
 <div id="toast"></div>
 <script src="config.js"></script>
+<script src="invitation.js"></script>
 <script>
  var tok='', items=[];
  function $(i){return document.getElementById(i);}
@@ -260,7 +261,7 @@
  function checked(id){return Array.prototype.map.call($(id).querySelectorAll('input:checked'),function(i){return i.value;});}
  function resetActForm(){
   editId='';$('a-name').value='';$('a-cible').value='';$('a-debut').value='';$('a-fin').value='';$('a-level').value='zone';actLevelChange();
-  $('actFormTitle').textContent='Créer une activité';$('a-cancel').style.display='none';
+  $('actFormTitle').textContent='Créer une activité';$('a-cancel').style.display='none';if(window.Inv)Inv.fromForm(true);
  }
  function loadActs(){
   api('listActivities').then(function(r){acts=r.activities||[];if(r.zones)$('dl-zone').innerHTML=r.zones.map(function(z){return '<option value="'+esc(z)+'">';}).join('');drawActs();}).catch(function(e){err(e.message);});
@@ -285,6 +286,7 @@
     '<p class="meta">'+per+'</p>'+
     '<div class="qr" id="aqr'+i+'"></div>'+
     '<div class="row"><button class="alt" data-act="png" data-i="'+i+'">⬇️ Image du QR</button><button class="alt" data-act="shimg" data-i="'+i+'">📤 Partager l\'image</button><button class="alt" data-act="copy" data-i="'+i+'">📋 Copier le lien</button><button class="alt" data-act="print" data-i="'+i+'">Imprimer</button></div>'+
+    '<div class="row"><button class="alt" data-act="inv" data-i="'+i+'">📣 Message + invitation du personnel</button></div>'+
     '<details><summary>Code de secours (saisie manuelle)</summary><div class="code" style="text-align:center">'+esc(a.code)+'</div></details>'+
     '<div class="row">'+
     '<button class="alt" data-act="edit" data-i="'+i+'">Modifier</button><button class="alt" data-act="renew" data-i="'+i+'">Nouveau code</button>'+
@@ -296,7 +298,7 @@
  function saveAct(extra){
   var a={id:editId,name:$('a-name').value.trim(),level:$('a-level').value,cible:$('a-cible').value.trim(),forms:checked('a-forms'),debut:$('a-debut').value,fin:$('a-fin').value};
   if(!a.name){err("Indiquez le nom de l'activité.");return;}
-  err('');api('saveActivity',{activity:a}).then(function(){toast(editId?'Activité modifiée':'Activité créée');resetActForm();loadActs();}).catch(function(e){err(e.message);});
+  err('');if(window.Inv)Inv.persist();api('saveActivity',{activity:a}).then(function(){toast(editId?'Activité modifiée':'Activité créée');resetActForm();loadActs();}).catch(function(e){err(e.message);});
  }
  document.addEventListener('click',function(ev){
   var b=ev.target.closest('button[data-act]');if(!b)return;
@@ -306,9 +308,10 @@
   else if(k==='shimg')shQr(linkOf(a.code),a.name,sub);
   else if(k==='copy'){var u=linkOf(a.code);if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(u).then(function(){toast('Lien copié');},function(){prompt('Copiez ce lien :',u);});else prompt('Copiez ce lien :',u);}
   else if(k==='print')printBox(b);
+  else if(k==='inv'){Inv.fromActivity(a);}
   else if(k==='edit'){
    editId=a.id;$('a-name').value=a.name;$('a-level').value=a.level;actLevelChange(a);$('a-cible').value=a.cible||'';$('a-debut').value=a.debut||'';$('a-fin').value=a.fin||'';
-   $('actFormTitle').textContent="Modifier l'activité (le code QR ne change pas)";$('a-cancel').style.display='inline-block';$('actForm').scrollIntoView({behavior:'smooth'});
+   $('actFormTitle').textContent="Modifier l'activité (le code QR ne change pas)";$('a-cancel').style.display='inline-block';$('actForm').scrollIntoView({behavior:'smooth'});Inv.fromForm(true);
   }
   else if(k==='renew'){if(!confirm("Générer un nouveau code pour « "+a.name+" » ? L'ancien QR cessera de fonctionner : réimprimez-le et rediffusez-le."))return;
    api('saveActivity',{activity:{id:a.id,name:a.name,level:a.level,cible:a.cible,forms:a.forms,debut:a.debut,fin:a.fin,renew:true}}).then(function(){toast('Nouveau code créé');loadActs();}).catch(function(e){err(e.message);});}
@@ -317,6 +320,7 @@
    api('deleteActivity',{id:a.id}).then(function(){toast('Supprimée');loadActs();}).catch(function(e){err(e.message);});}
  });
  actLevelChange();
+ if(window.Inv)Inv.init();
  function add(lv){
   var n=$('n-'+lv).value.trim(),c=$('c-'+lv).value.trim();
   if(!n){err('Indiquez le nom.');return;}
