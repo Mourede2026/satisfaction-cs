@@ -11,7 +11,7 @@ var ACCOUNTS_SHEET_NAME = 'Comptes', SESSIONS_SHEET_NAME = 'Sessions', QRTOKENS_
 var SESSION_DURATION_MS = 12 * 60 * 60 * 1000;
 var QR_ROLES = ['enqueteur', 'personnel', 'enqueteur_hopital', 'personnel_hopital'];
 var QR_GUARD = {
-  submitUsagers: ['enqueteur'], submitPersonnels: ['enqueteur'], submitCogecs: ['enqueteur'],
+  submitUsagers: ['enqueteur'], submitCogecs: ['enqueteur'], // submitPersonnels : libre d'accès (pas de code)
   submitUsagersHopital: ['enqueteur_hopital'], submitPersonnelHopital: ['enqueteur_hopital'],
   submitCommunauteHopital: ['enqueteur_hopital'], submitActeursComHopital: ['enqueteur_hopital']
 };
@@ -23,11 +23,9 @@ function doPost(e) {
   var out;
   try {
     var body = JSON.parse(e.postData.contents), action = body.action, d = body.data || {};
-    var need = QR_GUARD[action], cid = d._cid;
-    if (need) {
-      if (!qrTokenValid_(body.qr, need)) return json_({ ok: false, error: 'QR_INVALID' });
-      if (dejaRecu_(cid)) return json_({ ok: true, duplicate: true });
-    }
+    var need = QR_GUARD[action], cid = d._cid, isSubmit = /^submit/.test(action);
+    if (need && !qrTokenValid_(body.qr, need)) return json_({ ok: false, error: 'QR_INVALID' });
+    if (isSubmit && dejaRecu_(cid)) return json_({ ok: true, duplicate: true });
     if (action === "submitUsagers") out = appendRecord_(SHEET_USAGERS, d);
     else if (action === "submitPersonnels") out = appendRecord_(SHEET_PERSONNELS, d);
     else if (action === "submitCogecs") out = appendRecord_(SHEET_COGECS, d);
@@ -49,7 +47,7 @@ function doPost(e) {
     else if (action === "updateAccount") out = handleUpdateAccount(d.token, d.username, d.fields);
     else if (action === "deleteAccount") out = handleDeleteAccount(d.token, d.username);
     else out = { ok: false, error: "Action inconnue : " + action };
-    if (need && out && out.ok) noterRecu_(cid);
+    if (isSubmit && out && out.ok) noterRecu_(cid);
   } catch (err) { out = { ok: false, error: err.message }; }
   return json_(out);
 }
@@ -534,4 +532,14 @@ function applyScopeToResult_(result, account) {
   result.enqueteurReport = { usagers: { categories: [], byEnqueteur: {} }, cogecs: { categories: [], byEnqueteur: {} } };
   Object.keys(result.gpsByDay).forEach(function (day) { result.gpsByDay[day] = result.gpsByDay[day].filter(function (p) { return p.commune && communeInScope_(p.commune, account); }); });
   return result;
+}
+
+/** À exécuter si vous ne connaissez pas (ou plus) le mot de passe du compte « admin » :
+ *  crée un nouveau mot de passe, affiché UNE SEULE FOIS dans Affichage > Journaux. */
+function reinitialiserMotDePasseAdmin() {
+  var pwd = Utilities.getUuid().replace(/-/g, '').slice(0, 10), f = findAccountRow_('admin');
+  var sh = getOrCreateSheet_(ACCOUNTS_SHEET_NAME, ['Identifiant', 'Hash', 'Niveau', 'Département', 'Zone Sanitaire', 'Commune', 'Libellé', 'DernièreModification', 'Actif']);
+  if (!f) sh.appendRow(['admin', sha256Hex_('admin:' + pwd), 'admin', '', '', '', 'Administrateur', '', 'OUI']);
+  else { sh.getRange(f.row, 2).setValue(sha256Hex_('admin:' + pwd)); sh.getRange(f.row, 3).setValue('admin'); sh.getRange(f.row, 9).setValue('OUI'); }
+  Logger.log('Identifiant : admin — Nouveau mot de passe : ' + pwd);
 }
