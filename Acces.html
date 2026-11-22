@@ -30,7 +30,7 @@
    callApi('matchQrCode',{text:code}).then(function(r){
      if(!r||!r.ok||(r.role!=='enqueteur'&&r.role!=='enqueteur_hopital')){msg.className='err';msg.textContent="Code invalide ou remplacé. Demandez le code actuel à l'administrateur.";return;}
      localStorage.setItem(QR_KEY,code); localStorage.setItem('qr_role',r.role);
-     location.replace('Index.html');
+     location.replace('index.html');
    }).catch(function(){msg.className='err';msg.textContent='Erreur de connexion. Réessayez avec du réseau.';});
  }
  if(p.get('code')) go(p.get('code'));

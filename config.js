@@ -23,7 +23,7 @@ function callApi(action, data, password) {
 // Les formulaires exigent un code scanné ; il est revérifié toutes les 60 s
 // et à chaque envoi : si l'administrateur change le code, l'accès est coupé.
 (function () {
-  if (!/(Form[A-Za-z]*|Index)\.html$|\/$/.test(location.pathname)) return;
+  if (!/(Form[A-Za-z]*|index)\.html$|\/$/.test(location.pathname)) return;
   window.qrExit = function () {
     localStorage.removeItem(QR_KEY);
     location.replace("Acces.html?expired=1");
