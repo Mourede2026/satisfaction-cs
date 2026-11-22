@@ -692,7 +692,7 @@ function activitiesRows_() {
   var v = sh.getDataRange().getValues(), out = [];
   for (var i = 1; i < v.length; i++) {
     if (!v[i][0] || v[i][8] === '') continue;
-    out.push({ row: i + 1, id: String(v[i][0]), name: String(v[i][1]), level: String(v[i][2]), cible: String(v[i][3] || ''), forms: csvList_(v[i][4]), communes: csvList_(v[i][5]), debut: day_(v[i][6]), fin: day_(v[i][7]), code: String(v[i][8]).trim(), active: v[i][9] !== 'NON' });
+    out.push({ row: i + 1, id: String(v[i][0]), name: String(v[i][1]), level: String(v[i][2]), cible: String(v[i][3] || ''), forms: csvList_(v[i][4]), communes: [], debut: day_(v[i][6]), fin: day_(v[i][7]), code: String(v[i][8]).trim(), active: v[i][9] !== 'NON' });
   }
   return out;
 }
@@ -728,7 +728,7 @@ function handleSaveActivity(token, p) {
   if (!name) return { ok: false, error: "Indiquez le nom de l'activité." };
   if (level !== 'zone' && level !== 'hopital') return { ok: false, error: 'Niveau inconnu.' };
   var okForms = ACT_FORMS[level], forms = (p.forms || []).filter(function (f) { return okForms.indexOf(f) > -1; });
-  var communes = level === 'zone' ? (p.communes || []).map(function (x) { return String(x).replace(/,/g, ' ').trim(); }).filter(Boolean) : [];
+  var communes = []; // les activités ne sont plus restreintes à des communes
   var rx = /^\d{4}-\d{2}-\d{2}$/, debut = String(p.debut || ''), fin = String(p.fin || '');
   if ((debut && !rx.test(debut)) || (fin && !rx.test(fin))) return { ok: false, error: 'Date invalide.' };
   if (debut && fin && fin < debut) return { ok: false, error: 'La date de fin précède la date de début.' };

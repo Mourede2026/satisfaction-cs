@@ -271,6 +271,9 @@ let autoTimer = null;
 let currentPeriod = 'auto';
 let acct = null;
 
+(function(){ // lien personnel d'un gestionnaire : ?u=identifiant -> identifiant déjà rempli
+  try { var u = new URLSearchParams(location.search).get('u'); if (u) { document.getElementById('userInput').value = u; document.getElementById('pwdInput').focus(); } } catch(e){}
+})();
 function login(){
   var pwdIn = document.getElementById('pwdInput').value;
   document.getElementById('loginError').textContent = 'Connexion...';

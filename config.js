@@ -38,7 +38,7 @@ function setQr(level, token, label) {
 function clearQr(level) {
   localStorage.removeItem(QR_KEYS[level]); localStorage.removeItem(QR_KEYS[level] + "_label"); localStorage.removeItem(QR_KEYS[level] + "_act");
 }
-// Activité scannée (nom, cible, formulaires autorisés, communes, dates) : mémorisée avec le code
+// Activité scannée (nom, cible, formulaires autorisés, dates) : mémorisée avec le code
 function getActivity(level) { try { return JSON.parse(localStorage.getItem(QR_KEYS[level || pageLevel()] + "_act") || "null"); } catch (e) { return null; } }
 function setActivity(level, a) { if (a) localStorage.setItem(QR_KEYS[level] + "_act", JSON.stringify(a)); else localStorage.removeItem(QR_KEYS[level] + "_act"); }
 // Clé de formulaire (pour restreindre ce qu'une activité autorise)
@@ -101,14 +101,6 @@ document.addEventListener("DOMContentLoaded", function () {
   var anchor = document.getElementById("status-banner") || document.querySelector("main");
   if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(d, anchor);
 });
-// À appeler après chaque rendu du formulaire (zone sanitaire) : limite la liste des communes à celles de l'activité ; une seule = présélectionnée
-function applyActivityToForm() {
-  var a = getActivity("zone"); if (!a || !a.communes || !a.communes.length) return;
-  var sel = document.getElementById("sel_commune"); if (!sel) return;
-  for (var i = sel.options.length - 1; i >= 1; i--) if (a.communes.indexOf(sel.options[i].value) === -1) sel.remove(i);
-  if (a.communes.length === 1 && sel.options.length === 2) { sel.selectedIndex = 1; if (typeof onCommuneChange === "function") onCommuneChange(sel.value); }
-}
-
 if ('serviceWorker' in navigator) { window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); }); }
 
 // Lien direct « solo » (?solo=1) : le formulaire du personnel s'ouvre seul, sans lien de retour vers l'accueil

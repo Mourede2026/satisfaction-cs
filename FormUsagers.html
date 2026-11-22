@@ -354,7 +354,7 @@ setInterval(function(){ if (navigator.onLine && readQueue().length) syncQueue(fa
 function resetForm(){
   currentAnswers = {};
   startTime = new Date();
-  render(); applyActivityToForm();
+  render();
   window.scrollTo({top:0, behavior:'smooth'});
 }
 
@@ -367,7 +367,7 @@ function showToast(msg){
 window.addEventListener('online', ()=>{ updateQueueBadge(); syncQueue(false); });
 window.addEventListener('offline', updateQueueBadge);
 
-render(); applyActivityToForm();
+render();
 updateQueueBadge();
 syncQueue(false);
 startBackgroundGeolocation();
