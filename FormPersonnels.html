@@ -252,6 +252,7 @@ function buildPayload(){
     data['start'] = startTime.toISOString();
     data['end'] = new Date().toISOString();
   }
+  data['_t_start'] = startTime.toISOString(); data['_t_end'] = new Date().toISOString(); data['_dev'] = getDeviceId();
   return data;
 }
 

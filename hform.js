@@ -3,7 +3,7 @@
    envoi, file d'attente hors connexion et position GPS. */
 (function () {
   var S = window.HFORM, STORE_LABELS = true; // true : le libellé du choix est enregistré ; false : son code
-  var QUEUE_KEY = 'queue_' + S.key, ans = {}, byName = {}, lastPos = null;
+  var QUEUE_KEY = 'queue_' + S.key, ans = {}, byName = {}, lastPos = null, t0 = new Date();
   var ENQ = (typeof getEnq === 'function') ? getEnq() : null; // enquêteur inscrit : le champ « Enqueteur » est renseigné automatiquement (prénom)
   S.fields.forEach(function (f) { byName[f.name] = f; });
   function $(id) { return document.getElementById(id); }
@@ -154,7 +154,7 @@
   function payload() {
     var d = {};
     S.fields.forEach(function (f) { if (f.type !== 'note' && !empty(ans[f.name])) d[f.name] = out(f, ans[f.name]); });
-    d.today = new Date().toISOString().slice(0, 10);
+    d.today = new Date().toISOString().slice(0, 10); d._t_start = t0.toISOString(); d._t_end = new Date().toISOString(); d._dev = (typeof getDeviceId === 'function') ? getDeviceId() : '';
     var g = S.fields.filter(function (f) { return f.type === 'geopoint' && ans[f.name]; })[0], p;
     if (g) { p = ans[g.name].split(' '); d['_start-geopoint_latitude'] = +p[0]; d['_start-geopoint_longitude'] = +p[1]; d['_start-geopoint_altitude'] = +p[2]; d['_start-geopoint_precision'] = +p[3]; }
     else if (lastPos) { d['_start-geopoint_latitude'] = lastPos.coords.latitude; d['_start-geopoint_longitude'] = lastPos.coords.longitude; d['_start-geopoint_altitude'] = lastPos.coords.altitude || ''; d['_start-geopoint_precision'] = lastPos.coords.accuracy || ''; }
@@ -202,7 +202,7 @@
     })();
   };
   setInterval(function () { if (navigator.onLine && getQ().length) window.syncQueue(false); }, 30000);
-  function reset() { ans = {}; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  function reset() { ans = {}; t0 = new Date(); render(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
   function toast(m) { var t = $('toast'); t.textContent = m; t.style.display = 'block'; setTimeout(function () { t.style.display = 'none'; }, 3000); }
   window.addEventListener('online', function () { badge(); window.syncQueue(false); });
   window.addEventListener('offline', badge);

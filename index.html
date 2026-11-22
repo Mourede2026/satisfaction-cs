@@ -22,6 +22,8 @@
   .card p{margin:0;color:#6b7280;font-size:.88rem}
   .card .tag{display:inline-block;margin-top:8px;font-size:.75rem;padding:3px 10px;border-radius:999px;background:#eef3f8;color:var(--brand)}
   .card .tag.ok{background:#e6f6ee;color:#1a7f4b}
+  .dash{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:14px 16px;margin:0 0 14px}
+  .dash h2{margin:0 0 6px;font-size:1.05rem}.dash table{width:100%;border-collapse:collapse;font-size:.92rem}.dash th,.dash td{padding:7px 6px;border-bottom:1px solid #eef0f3;text-align:left}.dash .n{text-align:right}.dash .ok{color:#15803d;font-weight:700}.dash .ko{color:#b91c1c;font-weight:700}.dash .hint{font-size:.82rem;color:#6b7280;margin:6px 0 0}
   .card .cnt{display:inline-block;margin-top:8px;margin-left:6px;font-size:.8rem;font-weight:700;padding:3px 10px;border-radius:999px;background:var(--brand);color:#fff}
   .card.admin{border-left-color:#6b7280}
   .card.off{border-left-color:#c9d0d8;opacity:.6;pointer-events:none}
@@ -121,22 +123,34 @@
       var tag = !c.href ? 'Bientôt disponible' : (!c.code ? '✅ Accès libre, sans code' : (has ? '✅ Code saisi' : '🔑 Code requis'));
       a.innerHTML = '<span class="emoji">' + c.e + '</span><h3>' + c.t + '</h3><p>' + c.d + '</p>' + (c.href ? '<span class="tag' + ((!c.code || has) ? ' ok' : '') + '">' + tag + '</span>' : '<span class="tag">' + tag + '</span>');
       box.appendChild(a);
-      if (c.href && c.key && act2) { var en = getEnq(level); if (en) showCount(a, level, c, en, act2); }
+      if (c.href && c.key && act2) { a.setAttribute('data-key', c.key); }
     });
+    var en = getEnq(level); if (en && act2) loadDash(level, en, L);
   }
-  // Nombre d'enregistrements de l'enquêteur pour cette cible : total serveur + réponses encore en attente sur l'appareil
+  // Tableau de bord de l'enquêteur : par cible, questionnaires validés, rejetés et reste à atteindre (+ réponses encore en attente sur l'appareil)
   function pendingOf(qk){ try { return JSON.parse(localStorage.getItem('queue_' + qk) || '[]').length; } catch (e) { return 0; } }
-  function showCount(a, level, c, en, act){
-    var qk = c.key + (level === 'hopital' ? '_hopital' : ''), ck = 'cnt_' + en.id + '_' + c.key, span = el('span', 'cnt', '');
-    function draw(n){ span.textContent = '📊 ' + n + ' enregistrement' + (n > 1 ? 's' : ''); }
+  function loadDash(level, en, L){
+    var box = $('cDash'); if (!box) { box = el('div', 'dash'); box.id = 'cDash'; $('cCards').parentNode.insertBefore(box, $('cCards')); }
+    var ck = 'dash_' + en.id; 
+    function draw(r){
+      var rows = '', per = '';
+      L.cards.forEach(function(c){
+        if (!c.key || !r.cibles[c.key]) return;
+        var x = r.cibles[c.key], pend = pendingOf(c.key + (level === 'hopital' ? '_hopital' : ''));
+        rows += '<tr><td>' + c.t + (pend ? '<br><small>⏳ ' + pend + ' en attente d\'envoi</small>' : '') + '</td><td class="n ok">' + x.valides + '</td><td class="n ko">' + x.rejetes + '</td><td class="n">' + (x.objectif === null ? '—' : x.objectif) + '</td><td class="n"><b>' + (x.reste === null ? '—' : x.reste) + '</b></td></tr>';
+        var card = document.querySelector('#cCards [data-key="' + c.key + '"]');
+        if (card) { var sp = card.querySelector('.cnt'); if (!sp) { sp = el('span', 'cnt', ''); card.appendChild(sp); } sp.textContent = '✅ ' + x.valides + ' validé' + (x.valides > 1 ? 's' : '') + (x.rejetes ? ' · ❌ ' + x.rejetes + ' rejeté' + (x.rejetes > 1 ? 's' : '') : ''); }
+      });
+      if (r.debut || r.fin) per = 'Période de collecte : ' + (r.debut ? 'du ' + r.debut : '') + (r.fin ? ' au ' + r.fin : '') + (r.joursRestants !== null ? ' · ' + r.joursRestants + ' jour(s) restant(s)' : '');
+      var rules = ''; if (r.mins && (r.mins.duree || r.mins.intervalle)) rules = 'Un questionnaire est validé s\'il dure au moins ' + (r.mins.duree || 0) + ' min' + (r.mins.intervalle ? ' et s\'il commence au moins ' + r.mins.intervalle + ' min après la fin du précédent' : '') + '.';
+      var rj = (r.rejDuree || r.rejInterv || r.rejPlafond) ? '<p class="hint">Rejetés : ' + r.rejDuree + ' trop court(s)' + (r.mins && r.mins.intervalle ? ', ' + r.rejInterv + ' trop rapproché(s) du précédent' : '') + (r.mins && r.mins.plafond ? ', ' + r.rejPlafond + ' au-delà du plafond de ' + r.mins.plafond + ' par jour et par téléphone' : '') + '. Ils sont enregistrés mais ne comptent pas pour votre objectif.</p>' : '';
+      box.innerHTML = '<h2>📊 Mon tableau de bord</h2>' + (per ? '<p class="hint">' + per + '</p>' : '') + '<table><thead><tr><th>Cible</th><th class="n">Validés</th><th class="n">Rejetés</th><th class="n">Objectif</th><th class="n">Reste à atteindre</th></tr></thead><tbody>' + rows + '</tbody></table>' + (rules ? '<p class="hint">' + rules + '</p>' : '') + rj;
+    }
     var cached = null; try { cached = JSON.parse(localStorage.getItem(ck) || 'null'); } catch (e) {}
-    draw((cached ? cached.n : 0) + pendingOf(qk)); a.appendChild(span);
+    if (cached) draw(cached); else box.innerHTML = '<h2>📊 Mon tableau de bord</h2><p class="hint">Chargement…</p>';
     if (!navigator.onLine) return;
     callApi('myCounts', {code: getQr(level), id: en.id}).then(function(r){
-      if (r && r.ok && r.counts && typeof r.counts[c.key] === 'number') {
-        try { localStorage.setItem(ck, JSON.stringify({n: r.counts[c.key]})); } catch (e) {}
-        draw(r.counts[c.key] + pendingOf(qk));
-      }
+      if (r && r.ok && r.cibles) { try { localStorage.setItem(ck, JSON.stringify(r)); } catch (e) {} draw(r); }
     }).catch(function(){});
   }
   function route(){

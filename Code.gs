@@ -120,6 +120,7 @@ function appendRecord_(sheetName, data, keyColumnName) {
     if (!sheet) throw new Error("Feuille introuvable: " + sheetName);
     var hm = buildHeaderMap_(sheet), keyCol = hm.map[keyColumnName];
     var cols_ = [DATE_COLUMN]; if (data[ACT_COL]) cols_.push(ACT_COL, ACT_ID_COL); if (data[ENQ_ID_COL]) cols_.push(ENQ_ID_COL, ENQ_NUM_COL);
+    if (data._t_start || data.start || data.end) cols_.push(START_COL, END_COL);
     cols_.forEach(function (nm) {
       if (hm.map[nm]) return;
       sheet.getRange(1, hm.lastCol + 1).setValue(nm);
@@ -127,6 +128,7 @@ function appendRecord_(sheetName, data, keyColumnName) {
       hm = buildHeaderMap_(sheet);
     });
     data[DATE_COLUMN] = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    if (data._t_start || data.start) data[START_COL] = String(data._t_start || data.start); if (data._t_end || data.end) data[END_COL] = String(data._t_end || data.end);
     if (!keyCol) throw new Error("Colonne clé '" + keyColumnName + "' introuvable dans " + sheetName);
     var row = getNextRow_(sheet, keyCol), rowValues = new Array(hm.lastCol).fill("");
     for (var key in data) { if (data.hasOwnProperty(key) && hm.map[key]) rowValues[hm.map[key] - 1] = data[key]; }
@@ -841,7 +843,7 @@ function reinitialiserMotDePasseAdmin() {
  * PÉRIODES DE COLLECTE, DONNÉES HÔPITAUX, ÉVOLUTION
  * ==================================================================== */
 var PERIODS_SHEET_NAME = 'Periodes', PERIODS_HEADERS = ['Id', 'Libellé', 'Début', 'Fin', 'Actif'];
-var DATE_COLUMN = 'DateEnvoi';
+var DATE_COLUMN = 'DateEnvoi', START_COL = 'Début saisie', END_COL = 'Fin saisie'; // heures de début et de fin du questionnaire (ISO), utilisées pour valider
 var HOSP_CFG = {"usagers":{"sheet":SHEET_USAGERS_H,"hosp":"fs","zone":"zone","dept":"dept","cats":[{"n":"Accessibilité et orientation","items":[{"c":"Comment_avez_vous_tr_acc_der_l_h_pital_","l":"yh7ka41"},{"c":"Avez_vous_rencontr_re_v_hicule_ou_moto_","l":"vv2mg93"},{"c":"L_acc_s_aux_b_timent_mobilit_r_duite_","l":"do9ex82"},{"c":"Une_fois_l_int_rie_neaux_d_orientation_","l":"fx3yw25"},{"c":"La_propret_et_le_co_ils_au_rendez_vous_","l":"lr9zr25"},{"c":"Avez_vous_des_diffic_au_sein_de_l_h_pital","l":"tt7uf73","i":1}]},{"n":"Accueil et temps d'attente","items":[{"c":"A1","l":"tt3jk83"},{"c":"A2","l":"xc4ty77"},{"c":"A3","l":"qg8km11"},{"c":"A3a","l":"xc4ty77"},{"c":"A4","l":"qg8km11"},{"c":"A4a","l":"xc4ty77"},{"c":"A5","l":"or5hc40"},{"c":"A5a","l":"xc4ty77"},{"c":"A6","l":"qg8km11"},{"c":"A6a","l":"xc4ty77"}]},{"n":"Consultation, écoute et soins","items":[{"c":"C1","l":"lr1fn01"},{"c":"C2","l":"aq4ny65"},{"c":"D1","l":"et8pq06"},{"c":"D2","l":"xe8kz81","i":1},{"c":"E1","l":"xe8kz81"},{"c":"B1","l":"ft6fb55"},{"c":"B2","l":"xa3sf70"},{"c":"B3","l":"hj0ae68"},{"c":"E2","l":"nb71g36"},{"c":"E3","l":"lr1fn01"},{"c":"E4","l":"zj4kh59"},{"c":"A7","l":"hn23q50"},{"c":"A8","l":"el7ir34","i":1},{"c":"C4","l":"qm6xj64"},{"c":"C5","l":"to23d11"}]},{"n":"Médicaments et coûts","items":[{"c":"G1","l":"fr7fs28"},{"c":"G2","l":"fr7fs28"},{"c":"F1","l":"vj2kq12"},{"c":"F2","l":"vj2kq12"},{"c":"F3","l":"vj2kq12"},{"c":"C3","l":"yg8fo88"}]},{"n":"Droits du patient et plaintes","items":[{"c":"Avant_qu_une_d_cisio_vous_t_consult_e_","l":"dm08z48"},{"c":"Avez_vous_pu_exprime_les_soins_propos_s_","l":"oi06h09"},{"c":"Si_oui_votre_d_cisi_ression_ni_jugement_","l":"ac7oc61"},{"c":"Lors_de_votre_prise_en_charge_","l":"ft8yj05"},{"c":"Si_oui_cette_person_essionnels_de_sant_","l":"oe7lp13"},{"c":"Lors_de_votre_prise_en_charge","l":"oy6qx24"},{"c":"Lors_de_votre_prise_en_charge__001","l":"vn2fi03"}]},{"n":"Hygiène et conditions de séjour","items":[{"c":"H1","l":"ky86z20"},{"c":"H2","l":"wc9ng48"},{"c":"H3","l":"bm4ts82"},{"c":"H4","l":"zo1if20"},{"c":"H5","l":"my43j02"},{"c":"H6","l":"to4qf61"},{"c":"H7","l":"tg9gh34"},{"c":"C6","l":"bm2eu92"},{"c":"H8","l":"kx3na73"}]},{"n":"Pratiques parallèles et rançonnement","items":[{"c":"AA1","l":"si4fc54","i":1},{"c":"AA2","l":"st7nh97","i":1},{"c":"AA3","l":"uf3af06","i":1},{"c":"AA4","l":"nd9id61"}]},{"n":"Fidélité et recommandation","items":[{"c":"I1","l":"di0gd12"},{"c":"I2","l":"co65e31"}]}]},"personnel":{"sheet":SHEET_PERSONNELS_H,"hosp":"fs","zone":"zs","dept":"dept","cats":[{"n":"Conditions et organisation du travail","items":[{"c":"Q1","l":"dt1jh61"},{"c":"Q2","l":"au1wl40"},{"c":"Q4","l":"lc4jc27"},{"c":"Q5","l":"lz1xh46"},{"c":"Q6","l":"my0pl21"},{"c":"Q7","l":"ht7xl14"},{"c":"Q8","l":"cn08k85"},{"c":"Recevez_vous_les_inf_d_lais_raisonnables_","l":"ye6ms95"},{"c":"Q15","l":"sx8na20"},{"c":"Q17","l":"zo7fe17"},{"c":"Q18","l":"ui7si32"},{"c":"Q19","l":"fg4lo40"}]},{"n":"Droits et devoirs des patients","items":[{"c":"Avez_vous_re_u_une_f_evoirs_des_patients_","l":"pb2zc32"},{"c":"Vous_sentez_vous_sou_evoirs_des_patients_","l":"ep8ob11"},{"c":"Avez_vous_connaissance_des_dro","l":"fs59c72"},{"c":"Ces_droits_et_devoir_votre_tablissement_","l":"kf85b90"},{"c":"Pensez_vous_que_vos_onnement_de_travail_","l":"vt7ev88"},{"c":"Avez_vous_des_difficult_s_dans","l":"ps1pl37","i":1}]},{"n":"Collègues et collaboration","items":[{"c":"Q9","l":"ll2ik06"},{"c":"Les_coll_gues_de_vot_protocoles_de_soins_","l":"yh4vk06"},{"c":"Les_coll_gues_assure_esoins_des_patients_","l":"wu8sg46"},{"c":"Les_coll_gues_collab_ontinuit_des_soins_","l":"ye5ft78"},{"c":"Q10","l":"dn1qa13","i":1}]},{"n":"Direction, gestion et perspectives","items":[{"c":"Q11","l":"ke4iv96"},{"c":"Q12","l":"dq1ei30"},{"c":"Q13","l":"km19b24"},{"c":"Q14","l":"aq3kk41"},{"c":"Q20","l":"ie4cp00"},{"c":"Q22","l":"ak5xg12"}]},{"n":"Climat et motivation","items":[{"c":"Q3","l":"fj5iq62"},{"c":"Q16","l":"eg9su19"},{"c":"Q21","l":"nv6jq01"}]}]},"communaute":{"sheet":SHEET_COMMUNAUTE_H,"hosp":"Formation_Sanitaire","zone":"zone","dept":"dept","cats":[{"n":"Accessibilité de l'hôpital","items":[{"c":"Comment_avez_vous_tr_acc_der_l_h_pital_","l":"yh7ka41"},{"c":"Avez_vous_rencontr_re_v_hicule_ou_moto_","l":"vv2mg93"},{"c":"L_acc_s_aux_b_timent_mobilit_r_duite_","l":"do9ex82"},{"c":"Une_fois_l_int_rie_neaux_d_orientation_","l":"fx3yw25"},{"c":"La_propret_et_le_co_ils_au_rendez_vous_","l":"lr9zr25"},{"c":"Avez_vous_des_suggestions_part","l":"my17e38"}]},{"n":"Accueil","items":[{"c":"Comment_jugez_vous_e_accueil_au_portail_","l":"gc9bj55"},{"c":"Comment_jugez_vous_e_l_dans_les_services_","l":"rr4vi05"},{"c":"Comment_jugez_vous_e_au_service_de_sortie","l":"kr3pn80"},{"c":"Comment_trouvez_vous_les_dirigeants_","l":"yl4bj31"}]},{"n":"Prise en charge","items":[{"c":"Comment_appr_ciez_vo_es_agents_examiner","l":"kp2xf35"},{"c":"Comment_appr_ciez_vo_diguer_de_bons_soins","l":"he7qz74"},{"c":"Comment_appr_ciez_vo_e_bonne_prescription","l":"ll4vy48"},{"c":"Comment_appr_ciez_vo_niquer_sur_les_actes","l":"yw8ak40"},{"c":"Pensez_vous_que_les_la_prise_en_charge_","l":"hz7sr16"},{"c":"Comment_trouvez_vous_rapport_avec_le_mal","l":"dg0fr95"},{"c":"Pensez_vous_que_les_ous_servir_au_besoin","l":"go5va85"},{"c":"Les_m_dicaments_pres_ibles_dans_le_centre","l":"lu3ug49"},{"c":"Les_m_dicaments_non_pharmacies_proches_","l":"pc5hv66"},{"c":"Comment_trouvez_vous_ifs_des_m_dicaments_","l":"pr5ud52"},{"c":"Comment_trouvez_vous_ents_hospitalisation","l":"ga1tt79"}]},{"n":"Aisance de séjour","items":[{"c":"Comment_trouvez_vous_la_cour_de_l_h_pital","l":"qv3pt77"},{"c":"Comment_trouvez_vous_alle_de_consultation","l":"uw5ur14"},{"c":"Comment_trouvez_vous_les_toilettes","l":"qf8kr56"},{"c":"Comment_trouvez_vous_la_buanderie","l":"sn14p46"},{"c":"Pensez_vous_que_les_onn_es_sur_les_soins","l":"pw6gg98"},{"c":"Pensez_vous_qu_on_a_est_pas_souvent_seul","l":"wx0vw58"},{"c":"Avez_vous_acc_s_l_eau","l":"ca3ve40"}]},{"n":"Pratiques parallèles","items":[{"c":"Vous_a_t_on_une_fois_des_soins_domicile","l":"tw9po34"},{"c":"Vous_est_il_jamais_a_r_des_agents_de_sant","l":"em0ev27"},{"c":"Des_agents_vous_ont_eux_directement_vers","l":"hg9ab90"}]},{"n":"Gestion administrative de l’hôpital","items":[{"c":"Pensez_vous_que_les_h_pital_g_rent_bien","l":"rg7fs81"},{"c":"Pensez_vous_que_dans_u_sein_de_l_h_pital_","l":"ny6xw05"}]}]}};
 var HOSP_SCALES = {"yh7ka41":{"Très claire":1,"Passable":0.33,"Insuffisante":0.33,"Inexistante":0},"vv2mg93":{"Aucune difficulté":1,"Quelques difficultés (recherche longue)":0.5,"Majeures (manque de places ou parking inadapté)":0},"do9ex82":{"Tout à fait adapté":1,"Plutôt adapté":0.67,"Peu adapté":0.33,"Pas du tout adapté":0},"fx3yw25":{"Très facilement":1,"Assez facilement":0.67,"Difficilement":0.33,"Je me suis perdu(e)":0},"lr9zr25":{"Très satisfaisant":1,"Satisfaisant":0.67,"Peu satisfaisant":0.33,"Pas du tout satisfaisant":0},"tt7uf73":{"Oui":1,"Non":0},"tt3jk83":{"Excellent":1,"Bon":0.67,"Passable":0.33,"Mauvais":0},"xc4ty77":{"Long":0.4,"Très long":0,"Acceptable":1},"qg8km11":{"Excellent":1,"Bon":0.67,"Passable":0.33,"Mauvais":0},"or5hc40":{"Excellent":1,"Bon":0.67,"Passable":0.33,"Mauvais":0},"lr1fn01":{"Très bien":1,"Bien":0.67,"Acceptable":0.5,"Mauvais":0},"aq4ny65":{"Oui, très bien":1,"Oui, bien":0.75,"Oui, passablement":0.4,"Non":0},"et8pq06":{"Correctement":1,"Passablement":0.5,"Non":0},"xe8kz81":{"Oui":1,"Non":0},"ft6fb55":{"Oui, tout ce qu'il faut":1,"Oui, un peu":0.5,"Non, rien du tout":0},"xa3sf70":{"Toujours":1,"Très souvent":0.75,"Quelques fois":0.5,"Rarement":0.25,"Jamais":0},"hj0ae68":{"Toujours":1,"Très souvent":0.75,"Quelques fois":0.5,"Rarement":0.25,"Jamais":0},"nb71g36":{"Très compétent":1,"Compétent":0.75,"Pas du tout compétent":0},"zj4kh59":{"Très satisfaisant":1,"Satisfaisant":0.67,"Peu satisfaisant":0.33,"Pas du tout satisfaisant":0},"hn23q50":{"Nous dépasse comme au marché":0,"Amicaux et serviables":1,"Ne nous considère pas":0,"Cherchent à nous encourager":1},"el7ir34":{"Très souvent":0.75,"Assez souvent":0.5,"Parfois":0.5,"Très rarement":0.1,"Jamais":0},"qm6xj64":{"Oui, promptement":1,"Oui, mais négligemment":0.4,"Non, pas du tout":0},"to23d11":{"Oui, toujours":1,"Oui, parfois":0.5,"Non, presque jamais":0},"fr7fs28":{"Oui":1,"Non":0,"Pas toujours":0.5},"vj2kq12":{"Très chers":0,"Chers":0.33,"Abordables":1},"yg8fo88":{"Oui, tout à faire":1,"En partie":0.5,"Non, pas du tout":0},"dm08z48":{"Oui":1,"Non":0},"oi06h09":{"Oui":1,"Non":0},"ac7oc61":{"Oui":1,"Non":0},"ft8yj05":{"Oui":1,"Non":0},"oe7lp13":{"Oui":1,"Non":0},"oy6qx24":{"Oui":1,"Non":0},"vn2fi03":{"Oui":1,"Non":0},"ky86z20":{"Convenable":1,"Acceptable":0.5,"Pas du tout convenable":0},"wc9ng48":{"Oui":1,"Non":0},"bm4ts82":{"Très convenable":1,"Acceptable":0.5,"Pas du tout convenable":0},"zo1if20":{"Très convenable":1,"Acceptable":0.5,"Pas du tout convenable":0},"my43j02":{"Très propres":1,"Acceptables":0.5,"Sales":0},"to4qf61":{"Très facilement":1,"Difficilement":0.33,"Pas du tout":0},"tg9gh34":{"Très convenable":1,"Acceptable":0.5,"Pas du tout convenable":0},"bm2eu92":{"Trop longue":0,"Acceptable selon le mal":1,"Trop courte":0},"kx3na73":{"Très satisfait":1,"Satisfait":0.67,"Peu satisfait":0.33,"Pas du tout satisfait":0},"si4fc54":{"Oui":1,"Non":0},"st7nh97":{"Oui":1,"Non":0},"uf3af06":{"Oui":1,"Non":0},"nd9id61":{"Oui":1,"Non":0},"di0gd12":{"Oui":1,"Non":0},"co65e31":{"Oui":1,"Non":0},"dt1jh61":{"Bonnes":1,"Acceptables":0.5,"Mauvaise":0},"au1wl40":{"Oui":1,"Non":0},"lc4jc27":{"Oui":1,"Pas tellement":0.5,"Non":0},"lz1xh46":{"Oui":1,"Pas tellement":0.5,"Non":0},"my0pl21":{"Oui":1,"Pas tellement":0.5,"Non":0},"ht7xl14":{"Oui":1,"Pas tellement":0.5,"Non":0},"cn08k85":{"Oui, toujours claires":1,"Parfois ambiguës":0.5,"Non, Souvent confuses ou contradictoires":0},"ye6ms95":{"Oui, en temps utile":1,"Parfois en retard":0.5,"Non, souvent trop tard ou pas du tout":0},"sx8na20":{"Oui":1,"Pas tellement":0.5,"Non":0},"zo7fe17":{"Oui":1,"Pas tellement":0.5,"Non":0},"ui7si32":{"Oui":1,"Pas tellement":0.5,"Non":0},"fg4lo40":{"Oui":1,"Pas tellement":0.5,"Non":0},"pb2zc32":{"Oui, de manière complète":1,"Partiellement ou de façon informelle":0.5,"Non, aucune formation ou sensibilisation reçue":0},"ep8ob11":{"Oui, pleinement soutenu":1,"Moyennement soutenu":0.5,"Non, peu ou pas soutenu":0},"fs59c72":{"Oui, clairement identifiés":1,"Partiellement connus":0.5,"Non, pas du tout connus":0},"kf85b90":{"Oui, ils sont bien expliqués":1,"Moyennement ou de façon peu claire":0.5,"Non, ils ne sont pas expliqués":0},"vt7ev88":{"Oui, dans l’ensemble":1,"Partiellement ou selon les situations":0.5,"Non, rarement ou jamais":0},"ps1pl37":{"Oui":1,"Non":0},"ll2ik06":{"Oui":1,"Pas tellement":0.5,"Non":0},"yh4vk06":{"Oui, la maîtrise est globalement très bonne":1,"Moyennement maîtrisée selon les personnes":0.5,"Non, des lacunes importantes sont observées":0},"wu8sg46":{"Oui, de manière constante":1,"Parfois, selon les situations":0.5,"Non, souvent inadaptée ou peu respectueuse":0},"ye5ft78":{"Oui, la collaboration est fluide et efficace":1,"Moyennement efficace selon les équipes":0.5,"Non, la coordination est souvent difficile":0},"dn1qa13":{"Oui":1,"Pas tellement":0.5,"Non":0},"ke4iv96":{"Oui":1,"Pas tellement":0.5,"Non":0},"dq1ei30":{"Oui":1,"Pas tellement":0.5,"Non":0},"km19b24":{"Oui":1,"Pas tellement":0.5,"Non":0},"aq3kk41":{"Oui":1,"Pas tellement":0.5,"Non":0},"ie4cp00":{"Oui":1,"Pas toujours":0.5,"Non":0},"ak5xg12":{"Oui":1,"Pas tellement":0.5,"Non":0},"fj5iq62":{"Oui":1,"Non":0},"eg9su19":{"Oui":1,"Pas tellement":0.5,"Non":0},"nv6jq01":{"Oui":1,"Pas tellement":0.5,"Non":0},"my17e38":{"Oui":1,"Non":0},"gc9bj55":{"Excellent/Bon":1,"Mauvais":0,"Passable":0.33},"rr4vi05":{"Excellent/Bon":1,"Mauvais":0,"Passable":0.33},"kr3pn80":{"Excellent/Bon":1,"Mauvais":0,"Passable":0.33},"yl4bj31":{"Accueillants":1,"Pas du tout accueillants":0},"kp2xf35":{"Très compétents/Compétents":1,"Pas du tout compétents":0},"he7qz74":{"Très compétents/Compétents":1,"Pas du tout compétents":0},"ll4vy48":{"Très compétents/Compétents":1,"Pas du tout compétents":0},"yw8ak40":{"Très compétents/Compétents":1,"Pas du tout compétents":0},"hz7sr16":{"Oui":1,"Non":0},"dg0fr95":{"Trop long/Long":0,"Raisonnable selon le mal":1,"Trop court":0},"go5va85":{"Oui":1,"Non":0},"lu3ug49":{"Tous les médicaments":1,"Quelques médicaments":0.5,"Aucun médicament":0},"pc5hv66":{"Oui":1,"Pas toujours":0.5,"Non":0},"pr5ud52":{"Très chers/Chers":0,"Abordables":1,"Pas du tout chers":1},"ga1tt79":{"Très chers/Chers":0,"Abordables":1,"Pas du tout chers":1},"qv3pt77":{"Propre":1,"Acceptable":0.5,"Salle":0},"uw5ur14":{"Propre":1,"Acceptable":0.5,"Salle":0},"qf8kr56":{"Propre":1,"Acceptable":0.5,"Salle":0},"sn14p46":{"Propre":1,"Acceptable":0.5,"Salle":0},"pw6gg98":{"Oui, tout à faire":1,"Oui, un peu":0.5,"Pas du tout":0},"wx0vw58":{"Oui":1,"Non":0},"ca3ve40":{"Facilement":1,"Difficilement":0.33,"Pas du tout":0},"tw9po34":{"Oui":1,"Non":0,"Pas directement":0.5},"em0ev27":{"Oui":1,"Non":0,"Pas directement":0.5},"hg9ab90":{"Oui":1,"Non":0,"Pas directement":0.5},"rg7fs81":{"Très bien/Bien":1,"Passable/Pas du tout":0.2},"ny6xw05":{"Oui":1,"Non":0}};
 var HOSP_KEYS = ['usagers', 'personnel', 'communaute'];
@@ -1145,23 +1147,20 @@ function enqFind_(a, nom, prenom, numero) {
   return f;
 }
 /** Première connexion de l'enquêteur : nom, prénom et numéro d'enquêteur (accès par le code de son activité). */
-/** Nombre d'enregistrements d'un enquêteur inscrit, par cible, dans son activité (affiché sur les boutons de cibles). */
+/** Tableau de bord de l'enquêteur inscrit : par cible, questionnaires validés, rejetés, objectif et reste à atteindre sur la période. */
 function handleMyCounts(d) {
   var a = activityForInvoice_(d.code); if (!a) return { ok: false, error: 'ACT_INVALID' };
   var en = enqById_(a.id, d.id); if (!en) return { ok: false, error: 'ENQ_INVALID' };
-  var ss = SpreadsheetApp.getActiveSpreadsheet(), counts = {};
-  (a.level === 'hopital' ? [['usagers', SHEET_USAGERS_H], ['communaute', SHEET_COMMUNAUTE_H]] : [['usagers', SHEET_USAGERS], ['cogecs', SHEET_COGECS]]).forEach(function (p) {
-    var n = 0, sh = ss.getSheetByName(p[1]);
-    if (sh && sh.getLastRow() > 1) {
-      var hm = buildHeaderMap_(sh).map, ci = hm[ENQ_ID_COL], ca = hm[ACT_ID_COL];
-      if (ci && ca) {
-        var rows = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(ci, ca)).getValues();
-        rows.forEach(function (r) { if (String(r[ci - 1]) === String(en.id) && String(r[ca - 1]) === String(a.id)) n++; });
-      }
-    }
-    counts[p[0]] = n;
+  var act = actById_(a.id); if (!act) return { ok: false, error: 'ACT_INVALID' };
+  var c = suiviCompute_(act), me = null;
+  c.enqueteurs.forEach(function (e) { if (String(e.id) === String(en.id)) me = e; });
+  var cibles = {};
+  c.forms.forEach(function (f) {
+    var v = me ? (me.valid[f] || 0) : 0, r = me ? (me.rej[f] || 0) : 0, o = me && me.objByForm[f] !== undefined ? me.objByForm[f] : null;
+    cibles[f] = { valides: v, rejetes: r, objectif: o, reste: o === null ? null : Math.max(0, o - v) };
   });
-  return { ok: true, counts: counts };
+  return { ok: true, cibles: cibles, mins: c.mins, debut: act.debut || '', fin: act.fin || '', joursRestants: c.totalDays ? Math.max(0, c.totalDays - c.elapsed) : null,
+    rejDuree: me ? me.rejDuree : 0, rejInterv: me ? me.rejInterv : 0 };
 }
 function handleRegisterEnqueteur(d) {
   var a = activityForInvoice_(d.code); if (!a) return { ok: false, error: 'ACT_INVALID' };
@@ -1342,7 +1341,7 @@ var SUP_LEVEL = 'superviseur_act';
 var AFF_SHEET = 'Affectations', AFF_HEADERS = ['IdActivité', 'Superviseur'];
 var OBJ_SHEET = 'Objectifs', OBJ_HEADERS = ['IdActivité', 'Enquêteur', 'Cible', 'Objectif'];
 var EFF_SHEET = 'Effectifs', EFF_HEADERS = ['IdActivité', 'Structure', 'Effectif'];
-var PAR_SHEET = 'SuiviParams', PAR_HEADERS = ['IdActivité', 'MontantTotal', 'ModifiéLe', 'ModifiéPar'];
+var PAR_SHEET = 'SuiviParams', PAR_HEADERS = ['IdActivité', 'MontantTotal', 'ModifiéLe', 'ModifiéPar', 'DuréeMinMin', 'IntervalleMinMin'];
 var OBJ_ALL = '*'; // ligne d'objectif commune à tous les enquêteurs inscrits de l'activité
 var SUIVI_FORMS = { usagers: 'Usagers', cogecs: 'COGECS', communaute: 'Communauté' };
 var SUIVI_MAXDAYS = 400;
@@ -1400,6 +1399,12 @@ function objGlobal_(actId) {
   Object.keys(legacy).forEach(function (f) { var best = null; Object.keys(legacy[f]).forEach(function (n) { if (best === null || legacy[f][n] > legacy[f][best]) best = n; }); g[f] = Number(best); });
   return g;
 }
+/** Durées minimales (en minutes) fixées par l'administrateur pour valider un questionnaire : durée de saisie et intervalle depuis le précédent. */
+function minsOf_(actId) {
+  try { var psh = tsheet_(PAR_SHEET, PAR_HEADERS); if (!String(psh.getRange(1, 5).getValue())) psh.getRange(1, 1, 1, PAR_HEADERS.length).setValues([PAR_HEADERS]); } catch (e) {}
+  var o = { duree: 0, intervalle: 0 }; suiviRows_(PAR_SHEET, PAR_HEADERS).forEach(function (r) { if (String(r.v[0]) === String(actId)) { o.duree = Math.max(0, Number(r.v[4]) || 0); o.intervalle = Math.max(0, Number(r.v[5]) || 0); } });
+  return o;
+}
 function montantOf_(actId) {
   var m = null; suiviRows_(PAR_SHEET, PAR_HEADERS).forEach(function (r) { if (String(r.v[0]) === String(actId)) { var n = Number(r.v[1]); if (n >= 0 && String(r.v[1]) !== '') m = n; } });
   return m;
@@ -1411,7 +1416,7 @@ function suiviCompute_(act) {
   var today = day_(new Date()), ss = SpreadsheetApp.getActiveSpreadsheet();
   var srcs = (act.level === 'hopital' ? [['usagers', SHEET_USAGERS_H], ['communaute', SHEET_COMMUNAUTE_H]] : [['usagers', SHEET_USAGERS], ['cogecs', SHEET_COGECS]])
     .filter(function (x) { return !act.forms.length || act.forms.indexOf(x[0]) > -1; });
-  var enq = {}, order = [], allDays = {}, glob = objGlobal_(act.id);
+  var enq = {}, order = [], allDays = {}, glob = objGlobal_(act.id), mins = minsOf_(act.id);
   // Enquêteurs INSCRITS (nom, prénom, numéro saisis à leur première connexion) : ils forment la liste de suivi, même sans réponse
   enqList_(act.id).forEach(function (x) {
     var k = 'id:' + x.id; enq[k] = { key: k, id: x.id, name: x.prenom, nom: x.nom, numero: x.numero, inscrit: true, byForm: {}, daily: {}, objByForm: {} };
@@ -1425,13 +1430,31 @@ function suiviCompute_(act) {
   srcs.forEach(function (sr) {
     var sh = ss.getSheetByName(sr[1]); if (!sh || sh.getLastRow() < 2) return;
     var hm = buildHeaderMap_(sh).map; if (!hm[ACT_ID_COL]) return;
+    var tsC = hm[START_COL] ? START_COL : (hm['start'] ? 'start' : ''), teC = hm[END_COL] ? END_COL : (hm['end'] ? 'end' : '');
+    var tsv = tsC ? readColumn_(sh, hm, tsC) : [], tev = teC ? readColumn_(sh, hm, teC) : [];
     var ids = readColumn_(sh, hm, ACT_ID_COL), ec = enqColumn_(hm), names = ec ? readColumn_(sh, hm, ec) : [], days = rowDays_(sh, hm), eids = hm[ENQ_ID_COL] ? readColumn_(sh, hm, ENQ_ID_COL) : [];
     for (var i = 0; i < ids.length; i++) {
       if (String(ids[i]) !== act.id) continue;
       var e = (eids[i] && enq['id:' + String(eids[i])]) || getE_(names[i]), d = days[i] || '';
       e.byForm[sr[0]] = (e.byForm[sr[0]] || 0) + 1;
+      (e.items = e.items || []).push({ f: sr[0], s: Date.parse(tsv[i]), e: Date.parse(tev[i]) });
       if (d) { e.daily[d] = (e.daily[d] || 0) + 1; allDays[d] = 1; }
     }
+  });
+  // Validation : durée de saisie ≥ minimum, et intervalle depuis la fin du questionnaire précédent du même enquêteur ≥ minimum.
+  // Un questionnaire sans horodatage (anciennes réponses) ne peut pas être évalué : il reste valide.
+  order.forEach(function (k) {
+    var e = enq[k], its = (e.items || []).slice().sort(function (a, b) { return (isNaN(a.s) ? 0 : a.s) - (isNaN(b.s) ? 0 : b.s); }), prevEnd = null;
+    e.valid = {}; e.rej = {}; e.rejDuree = 0; e.rejInterv = 0;
+    its.forEach(function (it) {
+      var bad = false;
+      if (!isNaN(it.s) && !isNaN(it.e)) {
+        if (mins.duree > 0 && (it.e - it.s) / 60000 < mins.duree) { bad = true; e.rejDuree++; }
+        else if (mins.intervalle > 0 && prevEnd !== null && (it.s - prevEnd) / 60000 < mins.intervalle) { bad = true; e.rejInterv++; }
+        prevEnd = it.e;
+      }
+      if (bad) e.rej[it.f] = (e.rej[it.f] || 0) + 1; else e.valid[it.f] = (e.valid[it.f] || 0) + 1;
+    });
   });
   // période
   var dk = Object.keys(allDays).sort(), start = act.debut || dk[0] || today, endAct = act.fin || '';
@@ -1449,8 +1472,8 @@ function suiviCompute_(act) {
     if (before && cumul.length) cumul = cumul.map(function (v) { return v + before; });
     var attendu = (hasObj && totalDays) ? Math.round(obj * Math.min(elapsed, totalDays) / totalDays * 10) / 10 : null;
     var restant = hasObj ? Math.max(0, obj - total) : null, joursRest = totalDays ? Math.max(0, totalDays - elapsed) : null;
-    var retenu = 0; formsKeys.forEach(function (fk) { retenu += Math.min(e.byForm[fk] || 0, e.objByForm[fk] || 0); });
-    return { id: e.id, numero: e.numero, nom: e.nom, inscrit: e.inscrit, retenu: retenu, name: e.name, byForm: e.byForm, objByForm: e.objByForm, total: total, objectif: hasObj ? obj : null, attendu: attendu,
+    var retenu = 0, nbValid = 0, nbRej = 0; formsKeys.forEach(function (fk) { retenu += Math.min(e.valid[fk] || 0, e.objByForm[fk] || 0); nbValid += e.valid[fk] || 0; nbRej += e.rej[fk] || 0; });
+    return { valid: e.valid, rej: e.rej, nbValid: nbValid, nbRej: nbRej, rejDuree: e.rejDuree, rejInterv: e.rejInterv, id: e.id, numero: e.numero, nom: e.nom, inscrit: e.inscrit, retenu: retenu, name: e.name, byForm: e.byForm, objByForm: e.objByForm, total: total, objectif: hasObj ? obj : null, attendu: attendu,
       pct: hasObj && obj > 0 ? Math.round(total / obj * 1000) / 10 : null, ecart: attendu !== null ? Math.round((total - attendu) * 10) / 10 : null,
       rythmeReel: elapsed > 0 ? Math.round(total / elapsed * 10) / 10 : null, rythmeRequis: (restant !== null && joursRest) ? Math.round(restant / joursRest * 10) / 10 : null,
       last: Object.keys(e.daily).sort().pop() || '', cumul: cumul };
@@ -1463,7 +1486,7 @@ function suiviCompute_(act) {
     totals.realise += e.total; if (e.objectif !== null) totals.objectif += e.objectif; if (e.attendu !== null) totals.attendu += e.attendu;
     formsKeys.forEach(function (fk) { totals.byForm[fk].realise += e.byForm[fk] || 0; if (e.objByForm[fk] !== undefined) totals.byForm[fk].objectif += e.objByForm[fk]; });
   });
-  totals.attendu = Math.round(totals.attendu * 10) / 10;
+  totals.attendu = Math.round(totals.attendu * 10) / 10; totals.valides = 0; totals.rejetes = 0; list.forEach(function (e) { totals.valides += e.nbValid; totals.rejetes += e.nbRej; });
   // Paiement (per diem) : montant total ÷ (enquêteurs inscrits × objectif) = tarif par questionnaire ; chacun reçoit son tarif × questionnaires réalisés (plafonnés à l'objectif de chaque cible)
   var montant = montantOf_(act.id), objEach = 0; formsKeys.forEach(function (fk) { objEach += glob[fk] || 0; });
   var nIns = totals.nbInscrits, paiement = { defini: false, montant: montant, nbInscrits: nIns, objectifParEnq: objEach };
@@ -1475,7 +1498,7 @@ function suiviCompute_(act) {
   var attenduMoyen = (avgObj !== null && totalDays) ? days.map(function (d, i) { var t = Math.min(daysBetween_(act.debut || start, d) + 1, totalDays); return Math.round(avgObj * Math.max(0, t) / totalDays * 10) / 10; }) : null;
   var cumulTotal = days.map(function (d, i) { var s = 0; list.forEach(function (e) { s += e.cumul[i]; }); return s; });
   return { start: start, end: end, today: today, days: days, totalDays: totalDays, elapsed: elapsed, forms: formsKeys, enqueteurs: list, totals: totals,
-    avgObjectif: avgObj !== null ? Math.round(avgObj * 10) / 10 : null, paiement: paiement, attenduMoyen: attenduMoyen, cumulTotal: cumulTotal, nbObjectifs: withObj.length };
+    avgObjectif: avgObj !== null ? Math.round(avgObj * 10) / 10 : null, mins: mins, paiement: paiement, attenduMoyen: attenduMoyen, cumulTotal: cumulTotal, nbObjectifs: withObj.length };
 }
 /** Point du personnel : effectif attendu (saisi par l'administrateur) et réponses du formulaire personnel pendant la période. */
 function suiviPersonnel_(act, c) {
@@ -1522,7 +1545,7 @@ function handleSuiviConfig(token, actId) {
     var act = actById_(actId); if (!act) return { ok: false, error: 'Activité introuvable.' };
     out.forms = actForms_(act);
     out.enqueteurs = enqList_(act.id).map(function (x) { return { id: x.id, nom: x.nom, prenom: x.prenom, numero: x.numero }; });
-    out.objGlobal = objGlobal_(act.id); out.montant = montantOf_(act.id);
+    out.objGlobal = objGlobal_(act.id); out.montant = montantOf_(act.id); var mn_ = minsOf_(act.id); out.dureeMin = mn_.duree; out.intervalleMin = mn_.intervalle;
     if (c.admin) {
       out.assigned = suiviRows_(AFF_SHEET, AFF_HEADERS).filter(function (r) { return String(r.v[0]) === act.id; }).map(function (r) { return String(r.v[1]); });
       out.effectifs = suiviRows_(EFF_SHEET, EFF_HEADERS).filter(function (r) { return String(r.v[0]) === act.id; }).map(function (r) { return { structure: String(r.v[1]), effectif: Number(r.v[2]) || 0 }; });
@@ -1537,12 +1560,15 @@ function handleSuiviSave(token, actId, cfg) {
   var num = function (x) { var n = Math.round(Number(String(x).replace(/\s/g, '').replace(',', '.'))); return (n >= 0 && n <= 1000000) ? n : null; };
   var forms = actForms_(act), obj = [], g = cfg.objGlobal || {};
   forms.forEach(function (f) { if (g[f] === undefined || g[f] === null || String(g[f]).trim() === '') return; var n = num(g[f]); if (n !== null) obj.push([act.id, OBJ_ALL, f, String(n)]); });
-  var par = [], mt = cfg.montant === undefined || cfg.montant === null ? '' : String(cfg.montant).trim();
+  var par = [], mt = cfg.montant === undefined || cfg.montant === null ? '' : String(cfg.montant).trim(), m = '';
   if (mt !== '') {
-    var m = Math.round(Number(mt.replace(/\s/g, '').replace(',', '.')));
+    m = Math.round(Number(mt.replace(/\s/g, '').replace(',', '.')));
     if (!(m >= 0 && m <= 10000000000)) return { ok: false, error: 'Montant total à payer invalide.' };
-    par.push([act.id, String(m), new Date().toISOString(), c.user]);
   }
+  var mnum = function (x) { var t = String(x === undefined || x === null ? '' : x).trim().replace(',', '.'); if (t === '') return 0; var n = Number(t); return (n >= 0 && n <= 600) ? Math.round(n * 10) / 10 : null; };
+  var dMin = mnum(cfg.dureeMin), iMin = mnum(cfg.intervalleMin);
+  if (dMin === null || iMin === null) return { ok: false, error: 'Les durées minimales doivent être comprises entre 0 et 600 minutes.' };
+  if (m !== '' || dMin > 0 || iMin > 0) par.push([act.id, m === '' ? '' : String(m), new Date().toISOString(), c.user, String(dMin), String(iMin)]);
   var aff = null, eff = null;
   if (c.admin) {
     var okSup = {}; var v = accountsSheet_().getDataRange().getValues(); for (var i = 1; i < v.length; i++) if (String(v[i][2]) === SUP_LEVEL) okSup[String(v[i][0])] = 1;
@@ -1559,7 +1585,7 @@ function handleSuiviSave(token, actId, cfg) {
     if (eff) suiviReplace_(EFF_SHEET, EFF_HEADERS, act.id, eff);
     SpreadsheetApp.flush();
   } finally { lock.releaseLock(); }
-  return { ok: true, superviseurs: aff ? aff.length : null, objectifs: obj.length, effectifs: eff ? eff.length : null, montant: par.length ? Number(par[0][1]) : null };
+  return { ok: true, superviseurs: aff ? aff.length : null, objectifs: obj.length, effectifs: eff ? eff.length : null, montant: (par.length && par[0][1] !== '') ? Number(par[0][1]) : null, dureeMin: dMin, intervalleMin: iMin };
 }
 function handleCreateSupervisor(token, username, label, password) {
   var c = requireAdminSession_(token); if (!c.ok) return c;

@@ -142,3 +142,13 @@ if ('serviceWorker' in navigator) { window.addEventListener('load', function () 
     for (var i = 0; i < a.length; i++) a[i].parentNode.removeChild(a[i]);
   });
 })();
+
+
+// Identifiant unique de ce téléphone (créé au premier usage, conservé sur l'appareil) : sert à contrôler le plafond quotidien par téléphone.
+function getDeviceId() {
+  try {
+    var d = localStorage.getItem('device_id');
+    if (!d) { d = 'D' + ((window.crypto && crypto.randomUUID) ? crypto.randomUUID().replace(/-/g, '').slice(0, 12) : (Date.now().toString(36) + Math.random().toString(36).slice(2, 8))).toUpperCase(); localStorage.setItem('device_id', d); }
+    return d;
+  } catch (e) { return ''; }
+}

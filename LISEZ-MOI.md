@@ -112,3 +112,12 @@ Dans `Facture.html`, le bouton **✅ M'enregistrer (sans facture)** envoie uniqu
 (v17) Dans `Facture.html`, un enquêteur déjà enregistré voit son identité en rappel (prénom, nom, numéro) au lieu des champs : il ajoute seulement ses factures. Le lien « Ce n'est pas moi / modifier » rouvre les champs. Seuls `Facture.html` et `sw.js` changent.
 
 (v18) Navigation : avec une activité scannée, « Collecter des données » ouvre directement les cibles de son niveau (zone ou hôpital), la flèche retour des cibles ramène à l'accueil, et `Facture.html` renvoie vers les cibles de l'enquêteur. `index.html`, `Facture.html` et `sw.js` changent.
+
+## Validation des questionnaires et tableau de bord enquêteur (v19)
+**Installation** : remplacez `Code.gs` et déployez une **nouvelle version** ; déposez sur GitHub `index.html`, `AdminSuivi.html`, `FormUsagers.html`, `FormCogecs.html`, `FormPersonnels.html`, `hform.js` et `sw.js` (ou le zip complet). Aucune fonction à exécuter : la feuille `SuiviParams` reçoit seule ses deux nouvelles colonnes, et les réponses reçoivent deux colonnes `Début saisie` et `Fin saisie`.
+
+- **Réglage** : `AdminSuivi.html` → Configuration → « Validation des questionnaires » : durée minimale (début → fin) et intervalle minimal (fin du précédent → début du suivant), en minutes, par activité. 0 ou vide = pas de contrôle.
+- **Règle** : un questionnaire est *rejeté* s'il est trop court, ou s'il commence trop tôt après la fin du précédent du même enquêteur (toutes cibles confondues). Il reste enregistré mais ne compte ni pour l'objectif ni pour le montant à payer. Le calcul est refait à chaque consultation : changer les minimums s'applique aussi aux réponses déjà reçues.
+- **Réponses déjà collectées sans heures** (avant cette version) : non évaluables, elles restent valides.
+- **Enquêteur** : sur les cibles, un tableau de bord montre, par cible, validés, rejetés, objectif et reste à atteindre, avec la période et les jours restants ; chaque bouton affiche « ✅ N validés · ❌ N rejetés ».
+- **Admin** : deux indicateurs « Validés » et « Rejetés » s'ajoutent au suivi ; le montant à payer ne compte que les validés.
