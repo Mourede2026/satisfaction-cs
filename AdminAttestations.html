@@ -105,6 +105,7 @@
      <button class="alt" onclick="validateAll(true)">✔ Valider tous ceux qui ont déposé une facture</button>
      <button class="alt" onclick="validateAll(false)">Retirer toutes les validations</button>
      <button class="pri" id="zipBtn" onclick="zipAll()">⬇️ Télécharger les attestations validées (ZIP)</button>
+     <button class="alt" id="zipFactBtn" onclick="zipFactures()">🧾 Télécharger toutes les factures (ZIP)</button>
     </div>
     <div class="prog" id="prog"><i></i></div>
     <div id="zipMsg" class="hint" style="margin-top:6px"></div>
@@ -231,7 +232,7 @@
     '<div class="nm"><span class="n">'+esc(e.nom)+' '+esc(e.prenom)+'</span><small>Déposé le '+esc((e.created||'').slice(0,10).split('-').reverse().join('/'))+'</small>'+
      '<div class="row" style="margin-top:4px"><button class="alt" data-k="edit" style="padding:3px 9px;font-size:.75rem">✎ Modifier</button><button class="dng" data-k="del" style="padding:3px 9px;font-size:.75rem">🗑</button></div></div>'+
     '<div><details'+(openRows[e.id]?' open':'')+'><summary>'+fac+' facture'+(fac>1?'s':'')+(fac?'':' ⚠️')+'</summary>'+
-     e.factures.map(function(f){return '<div class="fl"><span>📄 '+esc(f.name)+' <small style="color:#6b7280">('+size(f.size)+')</small></span><button class="alt" data-k="open" data-f="'+f.id+'">Ouvrir</button><button class="dng" data-k="delf" data-f="'+f.id+'">🗑</button></div>';}).join('')+
+     e.factures.map(function(f){return '<div class="fl"><span>📄 '+esc(f.name)+' <small style="color:#6b7280">('+size(f.size)+')</small></span><button class="alt" data-k="open" data-f="'+f.id+'">Ouvrir</button><button class="alt" data-k="dlf" data-f="'+f.id+'" title="Télécharger">⬇️</button><button class="dng" data-k="delf" data-f="'+f.id+'">🗑</button></div>';}).join('')+
      '</details></div>'+
     '<div><label class="sw"><input type="checkbox" data-k="val"'+(e.valide?' checked':'')+'><i></i><span>'+(e.valide?'Validée':'En attente')+'</span></label></div>'+
     '<div><button class="alt" data-k="pdf"'+(e.valide&&!m.length?'':' disabled')+'>⬇️ Attestation PDF</button></div>';
@@ -252,7 +253,8 @@
   var row=b.closest('.tb'),e=eById(row.dataset.id),k=b.dataset.k;
   if(k==='pdf')dl(e,b);
   else if(k==='open')openFacture(b.dataset.f,b);
-  else if(k==='delf'){if(!confirm('Supprimer cette facture ? Le fichier sera mis à la corbeille Google Drive.'))return;
+  else if(k==='dlf')downloadFacture(b.dataset.f,b);
+  else if(k==='delf'){if(!confirm('Supprimer cette facture ? Le fichier sera supprimé de Google Sheets.'))return;
    api('deleteFacture',{id:b.dataset.f}).then(function(){e.factures=e.factures.filter(function(f){return f.id!==b.dataset.f;});toast('Facture supprimée');drawList();}).catch(function(x){err(x.message);});}
   else if(k==='del'){if(!confirm('Supprimer '+e.nom+' '+e.prenom+' et toutes ses factures ?'))return;
    api('deleteEnqueteur',{id:e.id}).then(function(){enq=enq.filter(function(x){return x.id!==e.id;});toast('Enquêteur supprimé');drawSel();drawList();}).catch(function(x){err(x.message);});}
@@ -274,6 +276,29 @@
    if(w)w.location.href=URL.createObjectURL(blob);else saveBlob(blob,r.name);
    btn.disabled=false;
   }).catch(function(x){if(w)w.close();btn.disabled=false;err(x.message);});
+ }
+
+ function b64blob(b64){var bin=atob(b64),u=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return new Blob([u],{type:'application/pdf'});}
+ function downloadFacture(id,btn){
+  btn.disabled=true;
+  api('getFacture',{id:id}).then(function(r){saveBlob(b64blob(r.b64),r.name);btn.disabled=false;}).catch(function(x){btn.disabled=false;err(x.message);});
+ }
+ /* Toutes les factures de l'activité choisie, dans un ZIP (un dossier par enquêteur) */
+ function zipFactures(){
+  var a=actOf(cur),list=enqOf(cur).filter(function(e){return e.factures.length;});
+  if(!list.length){toast('Aucune facture à télécharger');return;}
+  if(typeof JSZip==='undefined'){err('Bibliothèque ZIP non chargée (connexion Internet requise).');return;}
+  var jobs=[];list.forEach(function(e){e.factures.forEach(function(f,i){jobs.push({e:e,f:f,i:i});});});
+  var zip=new JSZip(),n=0,btn=$('zipFactBtn'),old=btn.textContent;btn.disabled=true;
+  function step(){
+   if(n>=jobs.length){btn.textContent='Création du ZIP…';zip.generateAsync({type:'blob'}).then(function(b){saveBlob(b,'Factures_'+slug(a.name)+'.zip');btn.textContent=old;btn.disabled=false;});return;}
+   var j=jobs[n];btn.textContent='Factures '+(n+1)+' / '+jobs.length+'…';
+   api('getFacture',{id:j.f.id}).then(function(r){
+    var dir=(j.e.nom+' '+j.e.prenom).replace(/[\\\/:*?"<>|]+/g,'-');
+    zip.file(dir+'/'+(j.i+1)+'_'+r.name.replace(/[\\\/:*?"<>|]+/g,'-'),b64blob(r.b64));n++;setTimeout(step,0);
+   }).catch(function(x){err(x.message);btn.textContent=old;btn.disabled=false;});
+  }
+  step();
  }
 
  /* ---------- Validation en lot ---------- */

@@ -984,7 +984,7 @@ function hospitalData_(account, sel, periods) {
 }
 
 /* ---------- Enquêteurs : factures normalisées (PDF) et attestations de bonne fin d'exécution ---------- */
-// Les factures sont rangées dans un dossier Google Drive (créé tout seul). Les données (nom, prénom, validation) sont dans
+// Les factures PDF sont enregistrées directement dans Google Sheets (feuille « FacturesFichiers », découpées en morceaux : aucune autorisation Google Drive n'est nécessaire). Les données (nom, prénom, validation) sont dans
 // les feuilles Enqueteurs, Factures et AttestParams. Seul le compte « admin » peut les lire, les valider et les modifier.
 var ENQ_SHEET_NAME = 'Enqueteurs', FACT_SHEET_NAME = 'Factures', ATT_SHEET_NAME = 'AttestParams';
 var ENQ_HEADERS = ['ID', 'IdActivité', 'Activité', 'Niveau', 'Cible', 'Début', 'Fin', 'Nom', 'Prénom', 'Clé', 'CrééLe', 'Validée', 'ValidéeLe'];
@@ -994,12 +994,13 @@ var FACT_MAX_FILES = 5;                 // factures par envoi
 var FACT_MAX_BYTES = 6 * 1024 * 1024;   // 6 Mo par facture
 var FACT_MAX_PER_ENQ = 40;              // factures au total par enquêteur et par activité
 var FACT_GRACE_DAYS = 60;               // le dépôt reste ouvert 60 jours après la fin de l'activité
-var FACT_FOLDER_NAME = 'Factures enquêteurs - Satisfaction';
+var FICH_SHEET_NAME = 'FacturesFichiers', FICH_HEADERS = ['IdFacture', 'Partie', 'Données'];
+var FICH_CHUNK = 40000;                 // caractères par cellule (limite Google Sheets : 50 000)
 
-/** À exécuter UNE FOIS dans l'éditeur Apps Script : crée les feuilles et autorise l'accès à Google Drive. */
+/** À exécuter UNE FOIS dans l'éditeur Apps Script : crée les feuilles (Enqueteurs, Factures, FacturesFichiers, AttestParams). */
 function setupEnqueteursEtFactures() {
-  tsheet_(ENQ_SHEET_NAME, ENQ_HEADERS); tsheet_(FACT_SHEET_NAME, FACT_HEADERS); tsheet_(ATT_SHEET_NAME, ATT_HEADERS);
-  Logger.log('Dossier des factures : ' + factFolder_().getUrl());
+  tsheet_(ENQ_SHEET_NAME, ENQ_HEADERS); tsheet_(FACT_SHEET_NAME, FACT_HEADERS); tsheet_(ATT_SHEET_NAME, ATT_HEADERS); tsheet_(FICH_SHEET_NAME, FICH_HEADERS);
+  Logger.log('Feuilles prêtes. Les factures sont stockées dans la feuille ' + FICH_SHEET_NAME + '.');
 }
 function tsheet_(name, headers) {
   var ss = SpreadsheetApp.getActiveSpreadsheet(), sh = ss.getSheetByName(name);
@@ -1009,11 +1010,37 @@ function tsheet_(name, headers) {
   }
   return sh;
 }
-function factFolder_() {
-  var p = PropertiesService.getScriptProperties(), id = p.getProperty('FACT_FOLDER');
-  if (id) { try { var f = DriveApp.getFolderById(id); if (!f.isTrashed()) return f; } catch (e) {} }
-  var nf = DriveApp.createFolder(FACT_FOLDER_NAME); p.setProperty('FACT_FOLDER', nf.getId());
-  return nf;
+/** Enregistre un PDF (base64) dans la feuille FacturesFichiers, en morceaux de FICH_CHUNK caractères. */
+function storeFichier_(id, b64) {
+  var sh = tsheet_(FICH_SHEET_NAME, FICH_HEADERS), rows = [];
+  for (var i = 0, p = 1; i < b64.length; i += FICH_CHUNK, p++) rows.push([id, String(p), b64.substr(i, FICH_CHUNK)]);
+  sh.getRange(sh.getLastRow() + 1, 1, rows.length, 3).setNumberFormat('@').setValues(rows);
+}
+/** Lit le PDF (base64) d'une facture depuis la feuille FacturesFichiers. */
+function readFichier_(id) {
+  var sh = tsheet_(FICH_SHEET_NAME, FICH_HEADERS), last = sh.getLastRow(); if (last < 2) return null;
+  var ids = sh.getRange(2, 1, last - 1, 2).getValues(), parts = [];
+  for (var i = 0; i < ids.length; i++) if (String(ids[i][0]) === String(id)) parts.push({ row: i + 2, n: Number(ids[i][1]) || 0 });
+  if (!parts.length) return null;
+  parts.sort(function (a, b) { return a.n - b.n; });
+  var out = [], k = 0;
+  while (k < parts.length) { // lecture par blocs de lignes contiguës
+    var j = k; while (j + 1 < parts.length && parts[j + 1].row === parts[j].row + 1) j++;
+    sh.getRange(parts[k].row, 3, j - k + 1, 1).getValues().forEach(function (r) { out.push(String(r[0])); });
+    k = j + 1;
+  }
+  return out.join('');
+}
+/** Supprime les morceaux d'une facture (ou, pour d'anciennes factures, met le fichier Drive à la corbeille). */
+function trashFactureFile_(fileId, factId) {
+  if (String(fileId) !== 'SHEET') { try { DriveApp.getFileById(String(fileId)).setTrashed(true); } catch (e) {} return; }
+  var sh = tsheet_(FICH_SHEET_NAME, FICH_HEADERS), last = sh.getLastRow(); if (last < 2) return;
+  var ids = sh.getRange(2, 1, last - 1, 1).getValues();
+  for (var i = ids.length - 1; i >= 0; i--) {
+    if (String(ids[i][0]) !== String(factId)) continue;
+    var end = i; while (i - 1 >= 0 && String(ids[i - 1][0]) === String(factId)) i--;
+    sh.deleteRows(i + 2, end - i + 1);
+  }
 }
 function rowsOf_(sh, ncol) {
   if (sh.getLastRow() < 2) return [];
@@ -1069,7 +1096,7 @@ function handleSubmitFacture(d) {
     if (!bytes.length || bytes.length > FACT_MAX_BYTES) return { ok: false, error: 'La facture « ' + cleanName_(files[i].name) + ' » dépasse ' + Math.round(FACT_MAX_BYTES / 1048576) + ' Mo ou est vide.' };
     if (!(bytes[0] === 37 && bytes[1] === 80 && bytes[2] === 68 && bytes[3] === 70)) return { ok: false, error: 'La facture « ' + cleanName_(files[i].name) + ' » n\'est pas un fichier PDF.' };
     var orig = cleanName_(files[i].name).replace(/[\\\/:*?"<>|]+/g, '-').replace(/\.pdf$/i, '').slice(0, 60) || 'facture';
-    blobs.push({ bytes: bytes, name: orig });
+    blobs.push({ bytes: bytes, name: orig, b64: String(files[i].b64 || '').replace(/\s+/g, '') });
   }
   var lock = LockService.getScriptLock(); lock.waitLock(30000);
   try {
@@ -1079,11 +1106,11 @@ function handleSubmitFacture(d) {
     var have = rowsOf_(fsh, FACT_HEADERS.length).filter(function (r) { return String(r.v[1]) === eid; }).length;
     if (have + blobs.length > FACT_MAX_PER_ENQ) return { ok: false, error: 'Limite de ' + FACT_MAX_PER_ENQ + ' factures atteinte pour cet enquêteur.' };
     if (!ex) esh.getRange(esh.getLastRow() + 1, 1, 1, ENQ_HEADERS.length).setNumberFormat('@').setValues([[eid, a.id, a.name, a.level, a.cible, a.debut, a.fin, nom, prenom, key, new Date().toISOString(), 'NON', '']]);
-    var folder = factFolder_(), now = new Date().toISOString(), stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd-HHmmss');
-    blobs.forEach(function (b, i) {
-      var fname = nom + '_' + prenom + '_' + stamp + '_' + (have + i + 1) + '.pdf';
-      var file = folder.createFile(Utilities.newBlob(b.bytes, 'application/pdf', fname));
-      fsh.getRange(fsh.getLastRow() + 1, 1, 1, FACT_HEADERS.length).setNumberFormat('@').setValues([[newId_('F'), eid, b.name + '.pdf', file.getId(), String(b.bytes.length), now]]);
+    var now = new Date().toISOString();
+    blobs.forEach(function (b) {
+      var fid = newId_('F');
+      storeFichier_(fid, b.b64);
+      fsh.getRange(fsh.getLastRow() + 1, 1, 1, FACT_HEADERS.length).setNumberFormat('@').setValues([[fid, eid, b.name + '.pdf', 'SHEET', String(b.bytes.length), now]]);
     });
     SpreadsheetApp.flush();
     return { ok: true, nom: nom, prenom: prenom, ajoutees: blobs.length, total: have + blobs.length, activite: a.name };
@@ -1124,8 +1151,12 @@ function handleGetFacture(token, id) {
   var c = requireAdminSession_(token); if (!c.ok) return c;
   var f = rowsOf_(tsheet_(FACT_SHEET_NAME, FACT_HEADERS), FACT_HEADERS.length).filter(function (r) { return String(r.v[0]) === String(id); })[0];
   if (!f) return { ok: false, error: 'Facture introuvable.' };
-  try { var b = DriveApp.getFileById(String(f.v[3])).getBlob(); return { ok: true, name: String(f.v[2]), b64: Utilities.base64Encode(b.getBytes()) }; }
-  catch (e) { return { ok: false, error: "Fichier introuvable dans Google Drive (supprimé ?)." }; }
+  if (String(f.v[3]) === 'SHEET') {
+    var b64 = readFichier_(id);
+    return b64 ? { ok: true, name: String(f.v[2]), b64: b64 } : { ok: false, error: 'Contenu de la facture introuvable dans la feuille ' + FICH_SHEET_NAME + '.' };
+  }
+  try { var b = DriveApp.getFileById(String(f.v[3])).getBlob(); return { ok: true, name: String(f.v[2]), b64: Utilities.base64Encode(b.getBytes()) }; } // anciennes factures stockées sur Drive
+  catch (e) { return { ok: false, error: "Fichier introuvable (supprimé ?)." }; }
 }
 /** Valide ou retire la validation de l'attestation d'une liste d'enquêteurs. */
 function handleSetAttestationValide(token, ids, valide) {
@@ -1153,12 +1184,11 @@ function handleUpdateEnqueteur(token, id, nom, prenom) {
   sh.getRange(me.row, 8, 1, 3).setNumberFormat('@').setValues([[nom, prenom, key]]);
   return { ok: true, nom: nom, prenom: prenom };
 }
-function trashFactureFile_(fileId) { try { DriveApp.getFileById(String(fileId)).setTrashed(true); } catch (e) {} }
 function handleDeleteFacture(token, id) {
   var c = requireAdminSession_(token); if (!c.ok) return c;
   var sh = tsheet_(FACT_SHEET_NAME, FACT_HEADERS), f = rowsOf_(sh, FACT_HEADERS.length).filter(function (r) { return String(r.v[0]) === String(id); })[0];
   if (!f) return { ok: false, error: 'Facture introuvable.' };
-  trashFactureFile_(f.v[3]); sh.deleteRow(f.row);
+  trashFactureFile_(f.v[3], f.v[0]); sh.deleteRow(f.row);
   return { ok: true };
 }
 function handleDeleteEnqueteur(token, id) {
@@ -1166,7 +1196,7 @@ function handleDeleteEnqueteur(token, id) {
   var lock = LockService.getScriptLock(); lock.waitLock(30000);
   try {
     var fsh = tsheet_(FACT_SHEET_NAME, FACT_HEADERS), rows = rowsOf_(fsh, FACT_HEADERS.length);
-    for (var i = rows.length - 1; i >= 0; i--) if (String(rows[i].v[1]) === String(id)) { trashFactureFile_(rows[i].v[3]); fsh.deleteRow(rows[i].row); }
+    for (var i = rows.length - 1; i >= 0; i--) if (String(rows[i].v[1]) === String(id)) { trashFactureFile_(rows[i].v[3], rows[i].v[0]); fsh.deleteRow(rows[i].row); }
     var esh = tsheet_(ENQ_SHEET_NAME, ENQ_HEADERS), e = rowsOf_(esh, ENQ_HEADERS.length).filter(function (r) { return String(r.v[0]) === String(id); })[0];
     if (!e) return { ok: false, error: 'Enquêteur introuvable.' };
     esh.deleteRow(e.row);
