@@ -29,12 +29,16 @@ function doPost(e) {
     if (need && !qrTokenValid_(body.qr, need)) return json_({ ok: false, error: 'QR_INVALID' });
     if (isSubmit) {
       // Colonnes d'activité : posées uniquement par le serveur à partir du code scanné (jamais par le client)
-      delete d[ACT_COL]; delete d[ACT_ID_COL];
+      delete d[ACT_COL]; delete d[ACT_ID_COL]; delete d[ENQ_ID_COL]; delete d[ENQ_NUM_COL];
+      var enqId = d._enq; delete d._enq;
       var act = need ? activityByCode_(body.qr) : null;
       if (act) {
         var fk = FORM_KEY_[action];
         if (act.forms.length && fk && act.forms.indexOf(fk) === -1) return json_({ ok: false, error: 'FORM_NOT_ALLOWED' });
         d[ACT_COL] = act.name; d[ACT_ID_COL] = act.id;
+        // Enquêteur inscrit : identité posée par le serveur (prénom + numéro), jamais par le client
+        var en = enqId ? enqById_(act.id, enqId) : null;
+        if (en) { d[ENQ_ID_COL] = en.id; d[ENQ_NUM_COL] = en.numero; d["Identification de l'enquêteur"] = en.prenom; d['Enqueteur'] = en.prenom; }
       }
     }
     if (isSubmit && dejaRecu_(cid)) return json_({ ok: true, duplicate: true });
@@ -45,6 +49,7 @@ function doPost(e) {
     else if (action === "submitPersonnelHopital") out = appendRecord_(SHEET_PERSONNELS_H, d, 'dept');
     else if (action === "submitCommunauteHopital") out = appendRecord_(SHEET_COMMUNAUTE_H, d, 'dept');
     else if (action === "checkQr") out = { ok: true, valid: qrTokenValid_(d.token, d.level === 'hopital' ? ['enqueteur_hopital'] : d.level === 'zone' ? ['enqueteur'] : QR_ROLES) };
+    else if (action === "registerEnqueteur") out = handleRegisterEnqueteur(d);
     else if (action === "submitFacture") out = handleSubmitFacture(d);
     else if (action === "matchFactureCode") out = handleMatchFactureCode(d.text);
     else if (action === "getAttestation") out = handleGetAttestation(d);
@@ -113,7 +118,7 @@ function appendRecord_(sheetName, data, keyColumnName) {
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
     if (!sheet) throw new Error("Feuille introuvable: " + sheetName);
     var hm = buildHeaderMap_(sheet), keyCol = hm.map[keyColumnName];
-    var cols_ = [DATE_COLUMN]; if (data[ACT_COL]) cols_.push(ACT_COL, ACT_ID_COL);
+    var cols_ = [DATE_COLUMN]; if (data[ACT_COL]) cols_.push(ACT_COL, ACT_ID_COL); if (data[ENQ_ID_COL]) cols_.push(ENQ_ID_COL, ENQ_NUM_COL);
     cols_.forEach(function (nm) {
       if (hm.map[nm]) return;
       sheet.getRange(1, hm.lastCol + 1).setValue(nm);
@@ -994,7 +999,8 @@ function hospitalData_(account, sel, periods) {
 // Les factures PDF sont enregistrées directement dans Google Sheets (feuille « FacturesFichiers », découpées en morceaux : aucune autorisation Google Drive n'est nécessaire). Les données (nom, prénom, validation) sont dans
 // les feuilles Enqueteurs, Factures et AttestParams. Seul le compte « admin » peut les lire, les valider et les modifier.
 var ENQ_SHEET_NAME = 'Enqueteurs', FACT_SHEET_NAME = 'Factures', ATT_SHEET_NAME = 'AttestParams';
-var ENQ_HEADERS = ['ID', 'IdActivité', 'Activité', 'Niveau', 'Cible', 'Début', 'Fin', 'Nom', 'Prénom', 'Clé', 'CrééLe', 'Validée', 'ValidéeLe'];
+var ENQ_HEADERS = ['ID', 'IdActivité', 'Activité', 'Niveau', 'Cible', 'Début', 'Fin', 'Nom', 'Prénom', 'Clé', 'CrééLe', 'Validée', 'ValidéeLe', 'Numéro'];
+var ENQ_ID_COL = 'IdEnquêteur', ENQ_NUM_COL = 'N° enquêteur'; // colonnes ajoutées par le serveur aux feuilles de réponses
 var FACT_HEADERS = ['ID', 'IdEnqueteur', 'Fichier', 'FileId', 'Taille', 'AjoutéLe'];
 var ATT_HEADERS = ['IdActivité', 'Libellé', 'Début', 'Fin', 'Année', 'Lieu', 'DateSignature', 'Qualité', 'ModifiéLe'];
 var FACT_MAX_FILES = 5;                 // factures par envoi
@@ -1006,8 +1012,18 @@ var FICH_CHUNK = 40000;                 // caractères par cellule (limite Googl
 
 /** À exécuter UNE FOIS dans l'éditeur Apps Script : crée les feuilles (Enqueteurs, Factures, FacturesFichiers, AttestParams). */
 function setupEnqueteursEtFactures() {
-  tsheet_(ENQ_SHEET_NAME, ENQ_HEADERS); tsheet_(FACT_SHEET_NAME, FACT_HEADERS); tsheet_(ATT_SHEET_NAME, ATT_HEADERS); tsheet_(FICH_SHEET_NAME, FICH_HEADERS);
+  enqSheet_(); tsheet_(FACT_SHEET_NAME, FACT_HEADERS); tsheet_(ATT_SHEET_NAME, ATT_HEADERS); tsheet_(FICH_SHEET_NAME, FICH_HEADERS);
   Logger.log('Feuilles prêtes. Les factures sont stockées dans la feuille ' + FICH_SHEET_NAME + '.');
+}
+/** Feuille Enqueteurs (registre des enquêteurs inscrits) ; ajoute la colonne « Numéro » aux anciennes feuilles. */
+function enqSheet_() {
+  var sh = tsheet_(ENQ_SHEET_NAME, ENQ_HEADERS), n = ENQ_HEADERS.length;
+  if (sh.getLastColumn() < n || String(sh.getRange(1, n).getValue()).trim() !== ENQ_HEADERS[n - 1]) {
+    if (sh.getMaxColumns() < n) sh.insertColumnsAfter(sh.getMaxColumns(), n - sh.getMaxColumns());
+    sh.getRange(1, n).setValue(ENQ_HEADERS[n - 1]);
+    try { sh.getRange(2, n, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); } catch (e) {}
+  }
+  return sh;
 }
 function tsheet_(name, headers) {
   var ss = SpreadsheetApp.getActiveSpreadsheet(), sh = ss.getSheetByName(name);
@@ -1082,6 +1098,64 @@ function activityForInvoice_(code) {
   });
   return f;
 }
+function cleanNum_(s) { return String(s || '').replace(/[^A-Za-z0-9\-\/]/g, '').slice(0, 15); }
+function numKey_(s) { var k = String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); return /^\d+$/.test(k) ? k.replace(/^0+(?=\d)/, '') : k; } // « 07 » et « 7 » = même numéro
+function enqView_(r) { var v = r.v; return { id: String(v[0]), actId: String(v[1]), nom: String(v[7]), prenom: String(v[8]), numero: String(v[13] || '') }; }
+/** Enquêteur inscrit d'une activité, par son identifiant. */
+function enqById_(actId, id) {
+  var f = null;
+  rowsOf_(enqSheet_(), ENQ_HEADERS.length).forEach(function (r) { if (String(r.v[0]) === String(id) && String(r.v[1]) === String(actId)) f = enqView_(r); });
+  return f;
+}
+/** Liste des enquêteurs inscrits à une activité (ordre d'inscription). */
+function enqList_(actId) {
+  return rowsOf_(enqSheet_(), ENQ_HEADERS.length).filter(function (r) { return String(r.v[1]) === String(actId); }).map(enqView_);
+}
+/** Inscrit l'enquêteur (ou le retrouve) : le numéro d'enquêteur est unique dans l'activité. À appeler sous verrou. */
+function enqUpsert_(a, nom, prenom, numero) {
+  var sh = enqSheet_(), rows = rowsOf_(sh, ENQ_HEADERS.length), key = nameKey_(nom, prenom), nk = numKey_(numero), byNum = null, byName = null;
+  rows.forEach(function (r) {
+    if (String(r.v[1]) !== a.id) return;
+    if (nk && numKey_(r.v[13]) === nk) byNum = r;
+    if (String(r.v[9]) === key) byName = r;
+  });
+  if (byNum) {
+    if (String(byNum.v[9]) !== key) return { ok: false, error: 'Ce numéro d\'enquêteur (' + numero + ') est déjà attribué à ' + String(byNum.v[8]) + ' ' + String(byNum.v[7]) + '. Vérifiez votre numéro, votre nom et votre prénom.' };
+    return { ok: true, created: false, row: byNum.row, id: String(byNum.v[0]), nom: String(byNum.v[7]), prenom: String(byNum.v[8]), numero: String(byNum.v[13]) };
+  }
+  if (byName) {
+    var old = numKey_(byName.v[13]);
+    if (old && old !== nk) return { ok: false, error: 'Ce nom et ce prénom sont déjà enregistrés avec le numéro d\'enquêteur ' + String(byName.v[13]) + '.' };
+    if (!old) sh.getRange(byName.row, 14).setNumberFormat('@').setValue(numero); // ancien enquêteur sans numéro : on le complète
+    return { ok: true, created: false, row: byName.row, id: String(byName.v[0]), nom: String(byName.v[7]), prenom: String(byName.v[8]), numero: numero };
+  }
+  var id = newId_('E');
+  sh.getRange(sh.getLastRow() + 1, 1, 1, ENQ_HEADERS.length).setNumberFormat('@').setValues([[id, a.id, a.name, a.level, a.cible, a.debut, a.fin, nom, prenom, key, new Date().toISOString(), 'NON', '', numero]]);
+  return { ok: true, created: true, id: id, nom: nom, prenom: prenom, numero: numero };
+}
+/** Enquêteur déjà inscrit (lecture seule) : numéro + nom + prénom ; pour les anciens enquêteurs sans numéro, nom + prénom. */
+function enqFind_(a, nom, prenom, numero) {
+  var key = nameKey_(nom, prenom), nk = numKey_(numero), f = null;
+  rowsOf_(enqSheet_(), ENQ_HEADERS.length).forEach(function (r) {
+    if (String(r.v[1]) !== a.id || String(r.v[9]) !== key) return;
+    var rn = numKey_(r.v[13]); if (rn && nk && rn !== nk) return;
+    f = r;
+  });
+  return f;
+}
+/** Première connexion de l'enquêteur : nom, prénom et numéro d'enquêteur (accès par le code de son activité). */
+function handleRegisterEnqueteur(d) {
+  var a = activityForInvoice_(d.code); if (!a) return { ok: false, error: 'ACT_INVALID' };
+  var nom = fmtNom_(d.nom), prenom = fmtPrenom_(d.prenom), numero = cleanNum_(d.numero);
+  if (!nom || !prenom) return { ok: false, error: 'Indiquez votre nom et votre prénom.' };
+  if (!numero) return { ok: false, error: 'Indiquez votre numéro d\'enquêteur (lettres, chiffres et tirets).' };
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    var u = enqUpsert_(a, nom, prenom, numero); if (!u.ok) return u;
+    SpreadsheetApp.flush();
+    return { ok: true, id: u.id, nom: u.nom, prenom: u.prenom, numero: u.numero, created: u.created, activite: a.name };
+  } finally { lock.releaseLock(); }
+}
 function handleMatchFactureCode(rawText) {
   var cand = codeFromText_(rawText); if (!cand) return { ok: false, error: 'QR code vide.' };
   var a = activityForInvoice_(cand);
@@ -1092,7 +1166,9 @@ function handleMatchFactureCode(rawText) {
 function handleSubmitFacture(d) {
   var a = activityForInvoice_(d.code); if (!a) return { ok: false, error: 'ACT_INVALID' };
   var nom = fmtNom_(d.nom), prenom = fmtPrenom_(d.prenom);
+  var numero = cleanNum_(d.numero);
   if (!nom || !prenom) return { ok: false, error: 'Indiquez votre nom et votre prénom.' };
+  if (!numero) return { ok: false, error: 'Indiquez votre numéro d\'enquêteur.' };
   var files = d.files || [];
   if (!files.length) return { ok: false, error: 'Ajoutez au moins une facture au format PDF.' };
   if (files.length > FACT_MAX_FILES) return { ok: false, error: 'Maximum ' + FACT_MAX_FILES + ' factures par envoi.' };
@@ -1107,12 +1183,11 @@ function handleSubmitFacture(d) {
   }
   var lock = LockService.getScriptLock(); lock.waitLock(30000);
   try {
-    var esh = tsheet_(ENQ_SHEET_NAME, ENQ_HEADERS), fsh = tsheet_(FACT_SHEET_NAME, FACT_HEADERS), key = nameKey_(nom, prenom), ex = null;
-    rowsOf_(esh, ENQ_HEADERS.length).forEach(function (r) { if (String(r.v[1]) === a.id && String(r.v[9]) === key) ex = r; });
-    var eid = ex ? String(ex.v[0]) : newId_('E');
+    var fsh = tsheet_(FACT_SHEET_NAME, FACT_HEADERS), u = enqUpsert_(a, nom, prenom, numero);
+    if (!u.ok) return u;
+    var eid = u.id; nom = u.nom; prenom = u.prenom;
     var have = rowsOf_(fsh, FACT_HEADERS.length).filter(function (r) { return String(r.v[1]) === eid; }).length;
     if (have + blobs.length > FACT_MAX_PER_ENQ) return { ok: false, error: 'Limite de ' + FACT_MAX_PER_ENQ + ' factures atteinte pour cet enquêteur.' };
-    if (!ex) esh.getRange(esh.getLastRow() + 1, 1, 1, ENQ_HEADERS.length).setNumberFormat('@').setValues([[eid, a.id, a.name, a.level, a.cible, a.debut, a.fin, nom, prenom, key, new Date().toISOString(), 'NON', '']]);
     var now = new Date().toISOString();
     blobs.forEach(function (b) {
       var fid = newId_('F');
@@ -1129,8 +1204,7 @@ function handleGetAttestation(d) {
   var a = activityForInvoice_(d.code); if (!a) return { ok: false, error: 'ACT_INVALID' };
   var nom = fmtNom_(d.nom), prenom = fmtPrenom_(d.prenom);
   if (!nom || !prenom) return { ok: false, error: 'Indiquez votre nom et votre prénom.' };
-  var key = nameKey_(nom, prenom), ex = null;
-  rowsOf_(tsheet_(ENQ_SHEET_NAME, ENQ_HEADERS), ENQ_HEADERS.length).forEach(function (r) { if (String(r.v[1]) === a.id && String(r.v[9]) === key) ex = r; });
+  var ex = enqFind_(a, nom, prenom, cleanNum_(d.numero));
   if (!ex) return { ok: true, status: 'inconnu' };
   var nf = rowsOf_(tsheet_(FACT_SHEET_NAME, FACT_HEADERS), FACT_HEADERS.length).filter(function (r) { return String(r.v[1]) === String(ex.v[0]); }).length;
   if (String(ex.v[11]) !== 'OUI') return { ok: true, status: 'attente', factures: nf, nom: String(ex.v[7]), prenom: String(ex.v[8]) };
@@ -1153,7 +1227,7 @@ function handleListEnqueteurs(token) {
   rowsOf_(tsheet_(FACT_SHEET_NAME, FACT_HEADERS), FACT_HEADERS.length).forEach(function (r) {
     var k = String(r.v[1]); (fm[k] = fm[k] || []).push({ id: String(r.v[0]), name: String(r.v[2]), size: Number(r.v[4]) || 0, date: String(r.v[5]) });
   });
-  rowsOf_(tsheet_(ENQ_SHEET_NAME, ENQ_HEADERS), ENQ_HEADERS.length).forEach(function (r) {
+  rowsOf_(enqSheet_(), ENQ_HEADERS.length).forEach(function (r) {
     var v = r.v, aid = String(v[1]);
     if (!acts[aid]) {
       var l = live[aid];
@@ -1161,7 +1235,7 @@ function handleListEnqueteurs(token) {
                     : { id: aid, name: String(v[2]), level: String(v[3]), cible: String(v[4]), debut: day_(v[5]), fin: day_(v[6]), active: false, supprimee: true };
       acts[aid].params = params[aid] || null;
     }
-    enq.push({ id: String(v[0]), actId: aid, nom: String(v[7]), prenom: String(v[8]), created: String(v[10]), valide: String(v[11]) === 'OUI', valideLe: String(v[12] || ''), factures: (fm[String(v[0])] || []) });
+    enq.push({ id: String(v[0]), actId: aid, nom: String(v[7]), prenom: String(v[8]), numero: String(v[13] || ''), created: String(v[10]), valide: String(v[11]) === 'OUI', valideLe: String(v[12] || ''), factures: (fm[String(v[0])] || []) });
   });
   var list = Object.keys(acts).map(function (k) { return acts[k]; });
   // les activités encore ouvertes sans enquêteur sont aussi proposées (pour régler leurs paramètres à l'avance)
@@ -1186,7 +1260,7 @@ function handleSetAttestationValide(token, ids, valide) {
   if (!ids || !ids.length) return { ok: false, error: 'Aucun enquêteur.' };
   var lock = LockService.getScriptLock(); lock.waitLock(30000);
   try {
-    var sh = tsheet_(ENQ_SHEET_NAME, ENQ_HEADERS), set = {}; ids.forEach(function (i) { set[String(i)] = 1; });
+    var sh = enqSheet_(), set = {}; ids.forEach(function (i) { set[String(i)] = 1; });
     var n = 0, now = new Date().toISOString();
     rowsOf_(sh, ENQ_HEADERS.length).forEach(function (r) {
       if (!set[String(r.v[0])]) return;
@@ -1199,7 +1273,7 @@ function handleUpdateEnqueteur(token, id, nom, prenom) {
   var c = requireAdminSession_(token); if (!c.ok) return c;
   nom = fmtNom_(nom); prenom = fmtPrenom_(prenom);
   if (!nom || !prenom) return { ok: false, error: 'Nom et prénom obligatoires.' };
-  var sh = tsheet_(ENQ_SHEET_NAME, ENQ_HEADERS), rows = rowsOf_(sh, ENQ_HEADERS.length), me = null, key = nameKey_(nom, prenom);
+  var sh = enqSheet_(), rows = rowsOf_(sh, ENQ_HEADERS.length), me = null, key = nameKey_(nom, prenom);
   rows.forEach(function (r) { if (String(r.v[0]) === String(id)) me = r; });
   if (!me) return { ok: false, error: 'Enquêteur introuvable.' };
   if (rows.some(function (r) { return String(r.v[0]) !== String(id) && String(r.v[1]) === String(me.v[1]) && String(r.v[9]) === key; })) return { ok: false, error: 'Un autre enquêteur de cette activité porte déjà ce nom et ce prénom.' };
@@ -1219,7 +1293,7 @@ function handleDeleteEnqueteur(token, id) {
   try {
     var fsh = tsheet_(FACT_SHEET_NAME, FACT_HEADERS), rows = rowsOf_(fsh, FACT_HEADERS.length);
     for (var i = rows.length - 1; i >= 0; i--) if (String(rows[i].v[1]) === String(id)) { trashFactureFile_(rows[i].v[3], rows[i].v[0]); fsh.deleteRow(rows[i].row); }
-    var esh = tsheet_(ENQ_SHEET_NAME, ENQ_HEADERS), e = rowsOf_(esh, ENQ_HEADERS.length).filter(function (r) { return String(r.v[0]) === String(id); })[0];
+    var esh = enqSheet_(), e = rowsOf_(esh, ENQ_HEADERS.length).filter(function (r) { return String(r.v[0]) === String(id); })[0];
     if (!e) return { ok: false, error: 'Enquêteur introuvable.' };
     esh.deleteRow(e.row);
     return { ok: true };
@@ -1249,10 +1323,12 @@ var SUP_LEVEL = 'superviseur_act';
 var AFF_SHEET = 'Affectations', AFF_HEADERS = ['IdActivité', 'Superviseur'];
 var OBJ_SHEET = 'Objectifs', OBJ_HEADERS = ['IdActivité', 'Enquêteur', 'Cible', 'Objectif'];
 var EFF_SHEET = 'Effectifs', EFF_HEADERS = ['IdActivité', 'Structure', 'Effectif'];
+var PAR_SHEET = 'SuiviParams', PAR_HEADERS = ['IdActivité', 'MontantTotal', 'ModifiéLe', 'ModifiéPar'];
+var OBJ_ALL = '*'; // ligne d'objectif commune à tous les enquêteurs inscrits de l'activité
 var SUIVI_FORMS = { usagers: 'Usagers', cogecs: 'COGECS', communaute: 'Communauté' };
 var SUIVI_MAXDAYS = 400;
 
-function setupSuivi() { tsheet_(AFF_SHEET, AFF_HEADERS); tsheet_(OBJ_SHEET, OBJ_HEADERS); tsheet_(EFF_SHEET, EFF_HEADERS); Logger.log('Feuilles Affectations, Objectifs et Effectifs prêtes.'); }
+function setupSuivi() { tsheet_(AFF_SHEET, AFF_HEADERS); tsheet_(OBJ_SHEET, OBJ_HEADERS); tsheet_(EFF_SHEET, EFF_HEADERS); tsheet_(PAR_SHEET, PAR_HEADERS); enqSheet_(); Logger.log('Feuilles Affectations, Objectifs, Effectifs, SuiviParams et Enqueteurs prêtes.'); }
 
 function suiviRows_(name, headers) { var sh = tsheet_(name, headers); return rowsOf_(sh, headers.length); }
 function suiviReplace_(name, headers, actId, newRows) {
@@ -1290,6 +1366,25 @@ function daysBetween_(a, b) { // nombre de jours entre deux dates yyyy-MM-dd (b 
   var x = String(a).match(/^(\d{4})-(\d{2})-(\d{2})$/), y = String(b).match(/^(\d{4})-(\d{2})-(\d{2})$/); if (!x || !y) return 0;
   return Math.round((Date.UTC(+y[1], +y[2] - 1, +y[3]) - Date.UTC(+x[1], +x[2] - 1, +x[3])) / 86400000);
 }
+function actForms_(act) {
+  return (act.level === 'hopital' ? ['usagers', 'communaute'] : ['usagers', 'cogecs']).filter(function (x) { return !act.forms.length || act.forms.indexOf(x) > -1; });
+}
+/** Objectif commun (par cible) appliqué à TOUS les enquêteurs inscrits. À défaut de ligne commune, reprend la valeur la plus fréquente des anciens objectifs individuels. */
+function objGlobal_(actId) {
+  var g = {}, has = false, legacy = {};
+  suiviRows_(OBJ_SHEET, OBJ_HEADERS).forEach(function (r) {
+    if (String(r.v[0]) !== String(actId)) return;
+    var n = Number(r.v[3]); if (!(n >= 0)) return; var f = String(r.v[2]);
+    if (String(r.v[1]).trim() === OBJ_ALL) { g[f] = n; has = true; } else { (legacy[f] = legacy[f] || {})[n] = (legacy[f][n] || 0) + 1; }
+  });
+  if (has) return g;
+  Object.keys(legacy).forEach(function (f) { var best = null; Object.keys(legacy[f]).forEach(function (n) { if (best === null || legacy[f][n] > legacy[f][best]) best = n; }); g[f] = Number(best); });
+  return g;
+}
+function montantOf_(actId) {
+  var m = null; suiviRows_(PAR_SHEET, PAR_HEADERS).forEach(function (r) { if (String(r.v[0]) === String(actId)) { var n = Number(r.v[1]); if (n >= 0 && String(r.v[1]) !== '') m = n; } });
+  return m;
+}
 function enqColumn_(hm) { var names = ["Identification de l'enquêteur", 'Enqueteur', 'Enquêteur', 'enqueteur']; for (var i = 0; i < names.length; i++) if (hm[names[i]]) return names[i]; return ''; }
 
 /** Calcule tout le suivi d'une activité : réalisé par enquêteur et par jour, objectifs, attendu, personnel. */
@@ -1297,28 +1392,27 @@ function suiviCompute_(act) {
   var today = day_(new Date()), ss = SpreadsheetApp.getActiveSpreadsheet();
   var srcs = (act.level === 'hopital' ? [['usagers', SHEET_USAGERS_H], ['communaute', SHEET_COMMUNAUTE_H]] : [['usagers', SHEET_USAGERS], ['cogecs', SHEET_COGECS]])
     .filter(function (x) { return !act.forms.length || act.forms.indexOf(x[0]) > -1; });
-  var enq = {}, order = [], allDays = {};
-  function getE_(name) {
-    name = String(name || '').replace(/\s+/g, ' ').trim() || 'Non renseigné'; var k = strip_(name) || 'non renseigne';
-    if (!enq[k]) { enq[k] = { key: k, name: name, byForm: {}, daily: {}, objByForm: {} }; order.push(k); }
+  var enq = {}, order = [], allDays = {}, glob = objGlobal_(act.id);
+  // Enquêteurs INSCRITS (nom, prénom, numéro saisis à leur première connexion) : ils forment la liste de suivi, même sans réponse
+  enqList_(act.id).forEach(function (x) {
+    var k = 'id:' + x.id; enq[k] = { key: k, id: x.id, name: x.prenom, nom: x.nom, numero: x.numero, inscrit: true, byForm: {}, daily: {}, objByForm: {} };
+    Object.keys(glob).forEach(function (f) { enq[k].objByForm[f] = glob[f]; }); order.push(k);
+  });
+  function getE_(name) { // réponses sans enquêteur inscrit (anciennes réponses, code sans activité) : regroupées par nom
+    name = String(name || '').replace(/\s+/g, ' ').trim() || 'Non renseigné'; var k = 'n:' + (strip_(name) || 'non renseigne');
+    if (!enq[k]) { enq[k] = { key: k, id: '', name: name, nom: '', numero: '', inscrit: false, byForm: {}, daily: {}, objByForm: {} }; order.push(k); }
     return enq[k];
   }
   srcs.forEach(function (sr) {
     var sh = ss.getSheetByName(sr[1]); if (!sh || sh.getLastRow() < 2) return;
     var hm = buildHeaderMap_(sh).map; if (!hm[ACT_ID_COL]) return;
-    var ids = readColumn_(sh, hm, ACT_ID_COL), ec = enqColumn_(hm), names = ec ? readColumn_(sh, hm, ec) : [], days = rowDays_(sh, hm);
+    var ids = readColumn_(sh, hm, ACT_ID_COL), ec = enqColumn_(hm), names = ec ? readColumn_(sh, hm, ec) : [], days = rowDays_(sh, hm), eids = hm[ENQ_ID_COL] ? readColumn_(sh, hm, ENQ_ID_COL) : [];
     for (var i = 0; i < ids.length; i++) {
       if (String(ids[i]) !== act.id) continue;
-      var e = getE_(names[i]), d = days[i] || '';
+      var e = (eids[i] && enq['id:' + String(eids[i])]) || getE_(names[i]), d = days[i] || '';
       e.byForm[sr[0]] = (e.byForm[sr[0]] || 0) + 1;
       if (d) { e.daily[d] = (e.daily[d] || 0) + 1; allDays[d] = 1; }
     }
-  });
-  // objectifs
-  suiviRows_(OBJ_SHEET, OBJ_HEADERS).forEach(function (r) {
-    if (String(r.v[0]) !== act.id) return;
-    var n = Number(r.v[3]); if (!(n >= 0)) return;
-    getE_(r.v[1]).objByForm[String(r.v[2])] = n;
   });
   // période
   var dk = Object.keys(allDays).sort(), start = act.debut || dk[0] || today, endAct = act.fin || '';
@@ -1336,24 +1430,33 @@ function suiviCompute_(act) {
     if (before && cumul.length) cumul = cumul.map(function (v) { return v + before; });
     var attendu = (hasObj && totalDays) ? Math.round(obj * Math.min(elapsed, totalDays) / totalDays * 10) / 10 : null;
     var restant = hasObj ? Math.max(0, obj - total) : null, joursRest = totalDays ? Math.max(0, totalDays - elapsed) : null;
-    return { name: e.name, byForm: e.byForm, objByForm: e.objByForm, total: total, objectif: hasObj ? obj : null, attendu: attendu,
+    var retenu = 0; formsKeys.forEach(function (fk) { retenu += Math.min(e.byForm[fk] || 0, e.objByForm[fk] || 0); });
+    return { id: e.id, numero: e.numero, nom: e.nom, inscrit: e.inscrit, retenu: retenu, name: e.name, byForm: e.byForm, objByForm: e.objByForm, total: total, objectif: hasObj ? obj : null, attendu: attendu,
       pct: hasObj && obj > 0 ? Math.round(total / obj * 1000) / 10 : null, ecart: attendu !== null ? Math.round((total - attendu) * 10) / 10 : null,
       rythmeReel: elapsed > 0 ? Math.round(total / elapsed * 10) / 10 : null, rythmeRequis: (restant !== null && joursRest) ? Math.round(restant / joursRest * 10) / 10 : null,
       last: Object.keys(e.daily).sort().pop() || '', cumul: cumul };
   });
   list.sort(function (a, b) { return b.total - a.total || a.name.localeCompare(b.name, 'fr'); });
   var withObj = list.filter(function (e) { return e.objectif !== null; }), avgObj = withObj.length ? withObj.reduce(function (s, e) { return s + e.objectif; }, 0) / withObj.length : null;
-  var totals = { realise: 0, objectif: 0, attendu: 0, byForm: {}, nbEnq: list.length };
+  var totals = { realise: 0, objectif: 0, attendu: 0, byForm: {}, nbEnq: list.length, nbInscrits: list.filter(function (e) { return e.inscrit; }).length, nbActifs: list.filter(function (e) { return e.total > 0; }).length };
   formsKeys.forEach(function (fk) { totals.byForm[fk] = { realise: 0, objectif: 0 }; });
   list.forEach(function (e) {
     totals.realise += e.total; if (e.objectif !== null) totals.objectif += e.objectif; if (e.attendu !== null) totals.attendu += e.attendu;
     formsKeys.forEach(function (fk) { totals.byForm[fk].realise += e.byForm[fk] || 0; if (e.objByForm[fk] !== undefined) totals.byForm[fk].objectif += e.objByForm[fk]; });
   });
   totals.attendu = Math.round(totals.attendu * 10) / 10;
+  // Paiement (per diem) : montant total ÷ (enquêteurs inscrits × objectif) = tarif par questionnaire ; chacun reçoit son tarif × questionnaires réalisés (plafonnés à l'objectif de chaque cible)
+  var montant = montantOf_(act.id), objEach = 0; formsKeys.forEach(function (fk) { objEach += glob[fk] || 0; });
+  var nIns = totals.nbInscrits, paiement = { defini: false, montant: montant, nbInscrits: nIns, objectifParEnq: objEach };
+  if (montant !== null && nIns > 0 && objEach > 0) {
+    var tarif = montant / (nIns * objEach), dus = 0;
+    list.forEach(function (e) { if (e.inscrit) { e.aPayer = Math.round(tarif * e.retenu); e.pctPaye = Math.round(e.retenu / objEach * 1000) / 10; dus += e.aPayer; } });
+    paiement = { defini: true, montant: montant, nbInscrits: nIns, objectifParEnq: objEach, partParEnq: Math.round(montant / nIns), tarif: Math.round(tarif * 100) / 100, totalDu: dus, reste: Math.round(montant) - dus };
+  }
   var attenduMoyen = (avgObj !== null && totalDays) ? days.map(function (d, i) { var t = Math.min(daysBetween_(act.debut || start, d) + 1, totalDays); return Math.round(avgObj * Math.max(0, t) / totalDays * 10) / 10; }) : null;
   var cumulTotal = days.map(function (d, i) { var s = 0; list.forEach(function (e) { s += e.cumul[i]; }); return s; });
   return { start: start, end: end, today: today, days: days, totalDays: totalDays, elapsed: elapsed, forms: formsKeys, enqueteurs: list, totals: totals,
-    avgObjectif: avgObj !== null ? Math.round(avgObj * 10) / 10 : null, attenduMoyen: attenduMoyen, cumulTotal: cumulTotal, nbObjectifs: withObj.length };
+    avgObjectif: avgObj !== null ? Math.round(avgObj * 10) / 10 : null, paiement: paiement, attenduMoyen: attenduMoyen, cumulTotal: cumulTotal, nbObjectifs: withObj.length };
 }
 /** Point du personnel : effectif attendu (saisi par l'administrateur) et réponses du formulaire personnel pendant la période. */
 function suiviPersonnel_(act, c) {
@@ -1386,44 +1489,58 @@ function handleSuiviGet(token, actId) {
   r.supervisors = sup; r.viewer = c.label;
   return r;
 }
-/** Configuration (administrateur) : superviseurs, affectations, objectifs et effectifs d'une activité. */
+/** Configuration d'une activité : enquêteurs inscrits, objectif commun, montant total à payer (administrateur et superviseurs affectés) ;
+ *  superviseurs, affectations et effectif du personnel : administrateur seulement. */
 function handleSuiviConfig(token, actId) {
-  var c = requireAdminSession_(token); if (!c.ok) return c;
-  var v = accountsSheet_().getDataRange().getValues(), sups = [];
-  for (var i = 1; i < v.length; i++) if (String(v[i][2]) === SUP_LEVEL) sups.push({ username: String(v[i][0]), label: String(v[i][6] || v[i][0]), active: v[i][8] === undefined || v[i][8] === '' || v[i][8] === 'OUI' });
-  var out = { ok: true, supervisors: sups, activities: activitiesRows_().map(actSummary_) };
+  var c = suiviAccess_(token, actId); if (!c.ok) return c;
+  var out = { ok: true, admin: c.admin, activities: [], supervisors: [] };
+  if (c.admin) {
+    var v = accountsSheet_().getDataRange().getValues();
+    for (var i = 1; i < v.length; i++) if (String(v[i][2]) === SUP_LEVEL) out.supervisors.push({ username: String(v[i][0]), label: String(v[i][6] || v[i][0]), active: v[i][8] === undefined || v[i][8] === '' || v[i][8] === 'OUI' });
+    out.activities = activitiesRows_().map(actSummary_);
+  }
   if (actId) {
     var act = actById_(actId); if (!act) return { ok: false, error: 'Activité introuvable.' };
-    out.assigned = suiviRows_(AFF_SHEET, AFF_HEADERS).filter(function (r) { return String(r.v[0]) === act.id; }).map(function (r) { return String(r.v[1]); });
-    out.objectifs = suiviRows_(OBJ_SHEET, OBJ_HEADERS).filter(function (r) { return String(r.v[0]) === act.id; }).map(function (r) { return { enq: String(r.v[1]), cible: String(r.v[2]), obj: Number(r.v[3]) || 0 }; });
-    out.effectifs = suiviRows_(EFF_SHEET, EFF_HEADERS).filter(function (r) { return String(r.v[0]) === act.id; }).map(function (r) { return { structure: String(r.v[1]), effectif: Number(r.v[2]) || 0 }; });
-    var comp = suiviCompute_(act); out.detected = comp.enqueteurs.map(function (e) { return e.name; }); out.forms = comp.forms;
+    out.forms = actForms_(act);
+    out.enqueteurs = enqList_(act.id).map(function (x) { return { id: x.id, nom: x.nom, prenom: x.prenom, numero: x.numero }; });
+    out.objGlobal = objGlobal_(act.id); out.montant = montantOf_(act.id);
+    if (c.admin) {
+      out.assigned = suiviRows_(AFF_SHEET, AFF_HEADERS).filter(function (r) { return String(r.v[0]) === act.id; }).map(function (r) { return String(r.v[1]); });
+      out.effectifs = suiviRows_(EFF_SHEET, EFF_HEADERS).filter(function (r) { return String(r.v[0]) === act.id; }).map(function (r) { return { structure: String(r.v[1]), effectif: Number(r.v[2]) || 0 }; });
+    }
   }
   return out;
 }
 function handleSuiviSave(token, actId, cfg) {
-  var c = requireAdminSession_(token); if (!c.ok) return c;
+  var c = suiviAccess_(token, actId); if (!c.ok) return c;
   var act = actById_(actId); if (!act) return { ok: false, error: 'Activité introuvable.' };
   cfg = cfg || {};
-  var num = function (x) { var n = Math.round(Number(x)); return (n >= 0 && n <= 1000000) ? n : null; };
-  var okSup = {}; var v = accountsSheet_().getDataRange().getValues(); for (var i = 1; i < v.length; i++) if (String(v[i][2]) === SUP_LEVEL) okSup[String(v[i][0])] = 1;
-  var aff = [], seen = {}; (cfg.supervisors || []).forEach(function (u) { u = String(u); if (okSup[u] && !seen[u]) { seen[u] = 1; aff.push([act.id, u]); } });
-  var forms = act.level === 'hopital' ? ['usagers', 'communaute'] : ['usagers', 'cogecs'];
-  var obj = [], seenO = {};
-  (cfg.objectifs || []).forEach(function (o) {
-    var name = cleanName_(o.enq), n = num(o.obj), f = String(o.cible); if (!name || n === null || forms.indexOf(f) === -1) return;
-    var k = strip_(name) + '|' + f; if (seenO[k]) return; seenO[k] = 1; obj.push([act.id, name, f, String(n)]);
-  });
-  var eff = [], seenE = {};
-  (cfg.effectifs || []).forEach(function (e) {
-    var st = cleanName_(e.structure), n = num(e.effectif); if (n === null) return; var k = strip_(st); if (seenE[k]) return; seenE[k] = 1; eff.push([act.id, st, String(n)]);
-  });
+  var num = function (x) { var n = Math.round(Number(String(x).replace(/\s/g, '').replace(',', '.'))); return (n >= 0 && n <= 1000000) ? n : null; };
+  var forms = actForms_(act), obj = [], g = cfg.objGlobal || {};
+  forms.forEach(function (f) { if (g[f] === undefined || g[f] === null || String(g[f]).trim() === '') return; var n = num(g[f]); if (n !== null) obj.push([act.id, OBJ_ALL, f, String(n)]); });
+  var par = [], mt = cfg.montant === undefined || cfg.montant === null ? '' : String(cfg.montant).trim();
+  if (mt !== '') {
+    var m = Math.round(Number(mt.replace(/\s/g, '').replace(',', '.')));
+    if (!(m >= 0 && m <= 10000000000)) return { ok: false, error: 'Montant total à payer invalide.' };
+    par.push([act.id, String(m), new Date().toISOString(), c.user]);
+  }
+  var aff = null, eff = null;
+  if (c.admin) {
+    var okSup = {}; var v = accountsSheet_().getDataRange().getValues(); for (var i = 1; i < v.length; i++) if (String(v[i][2]) === SUP_LEVEL) okSup[String(v[i][0])] = 1;
+    aff = []; var seen = {}; (cfg.supervisors || []).forEach(function (u) { u = String(u); if (okSup[u] && !seen[u]) { seen[u] = 1; aff.push([act.id, u]); } });
+    eff = []; var seenE = {};
+    (cfg.effectifs || []).forEach(function (e) {
+      var st = cleanName_(e.structure), n = num(e.effectif); if (n === null) return; var k = strip_(st); if (seenE[k]) return; seenE[k] = 1; eff.push([act.id, st, String(n)]);
+    });
+  }
   var lock = LockService.getScriptLock(); lock.waitLock(30000);
   try {
-    suiviReplace_(AFF_SHEET, AFF_HEADERS, act.id, aff); suiviReplace_(OBJ_SHEET, OBJ_HEADERS, act.id, obj); suiviReplace_(EFF_SHEET, EFF_HEADERS, act.id, eff);
+    if (aff) suiviReplace_(AFF_SHEET, AFF_HEADERS, act.id, aff);
+    suiviReplace_(OBJ_SHEET, OBJ_HEADERS, act.id, obj); suiviReplace_(PAR_SHEET, PAR_HEADERS, act.id, par);
+    if (eff) suiviReplace_(EFF_SHEET, EFF_HEADERS, act.id, eff);
     SpreadsheetApp.flush();
   } finally { lock.releaseLock(); }
-  return { ok: true, superviseurs: aff.length, objectifs: obj.length, effectifs: eff.length };
+  return { ok: true, superviseurs: aff ? aff.length : null, objectifs: obj.length, effectifs: eff ? eff.length : null, montant: par.length ? Number(par[0][1]) : null };
 }
 function handleCreateSupervisor(token, username, label, password) {
   var c = requireAdminSession_(token); if (!c.ok) return c;

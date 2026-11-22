@@ -4,6 +4,7 @@
 (function () {
   var S = window.HFORM, STORE_LABELS = true; // true : le libellé du choix est enregistré ; false : son code
   var QUEUE_KEY = 'queue_' + S.key, ans = {}, byName = {}, lastPos = null;
+  var ENQ = (typeof getEnq === 'function') ? getEnq() : null; // enquêteur inscrit : le champ « Enqueteur » est renseigné automatiquement (prénom)
   S.fields.forEach(function (f) { byName[f.name] = f; });
   function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
@@ -53,6 +54,7 @@
   function renderCtl(f) { var c = $('c_' + f.name); if (c && f.type !== 'note') c.innerHTML = ctl(f); }
   function field(f) {
     var star = f.req ? '<span class="req"> *</span>' : '';
+    if (ENQ && f.name === 'Enqueteur') { ans[f.name] = ENQ.prenom; return '<div class="field" id="q_Enqueteur"><label class="qlabel">Enquêteur</label><div id="c_Enqueteur" style="padding:10px 12px;background:#eef3f8;border-radius:10px">👤 <b>' + esc(ENQ.prenom) + '</b> <small style="color:#6b7280">· N° ' + esc(ENQ.numero) + '</small></div><div class="ferr" id="e_Enqueteur"></div></div>'; }
     if (f.type === 'note') return '<div class="field note" id="q_' + f.name + '"><p>' + esc(f.label) + '</p></div>';
     return '<div class="field" id="q_' + f.name + '"><label class="qlabel">' + esc(f.label) + star + '</label>' +
       (f.hint && f.type !== 'geopoint' ? '<div class="hint" style="margin:-4px 0 6px">' + esc(f.hint) + '</div>' : '') +

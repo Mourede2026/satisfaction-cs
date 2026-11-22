@@ -5,7 +5,7 @@
 Après un redéploiement, les appareils qui avaient une adresse corrigée à la main depuis la page Administration reviennent automatiquement à cette adresse.
 
 1. **Apps Script** : remplacez tout le contenu de `Code.gs`, enregistrez, déployez une **nouvelle version**. Si c'est une première installation, exécutez aussi `setupComptesEtQrTokens` (crée la feuille `CodesAcces`) et `setupFeuillesHopitaux` (crée les 3 feuilles hôpital). Rien à exécuter pour les activités : la feuille `Activites` se crée toute seule. Si une feuille `ACTEURS_COM_HOPITAL` existe, supprimez-la : elle n'est plus utilisée. Ne rééxécutez pas `effacerMotsDePasse` si déjà fait.
-2. **GitHub** : déposez à la racine tous les fichiers sauf `Code.gs` et `LISEZ-MOI.md`, puis attendez 1-2 min (le cache `sat-v13` se met à jour tout seul).
+2. **GitHub** : déposez à la racine tous les fichiers sauf `Code.gs` et `LISEZ-MOI.md`, puis attendez 1-2 min (le cache `sat-v14` se met à jour tout seul).
 3. **Utilisation** : l'accueil propose *Collecter des données* (Zone sanitaire / Hôpital) et *Administration*.
 4. **Codes** : `AdminQR.html` (connexion admin, depuis téléphone ou tablette) permet de créer un code général ou un code par zone sanitaire / par hôpital, de le partager, imprimer, changer, désactiver ou supprimer.
 5. Le personnel (CS et hôpital) n'a jamais besoin de code. Un enquêteur saisit son code une seule fois par niveau.
@@ -81,3 +81,19 @@ Penser à **Enregistrer la configuration**.
 **Suivi (administrateur et superviseurs)** : évolution cumulée par enquêteur jour après jour avec le **niveau moyen attendu** (objectif moyen étalé linéairement sur la période), tableau par enquêteur (réalisé, objectif, attendu à ce jour, écart, avancement, statut, rythme réel et requis, dernière saisie) et **point du personnel** (effectif, réponses reçues, reste à enquêter, taux de participation, détail par structure). Actualisation automatique toutes les minutes. **📷 Exporter en image** produit un PNG (partage direct possible sur téléphone).
 
 **Règles de calcul** : le réalisé est compté par le code QR de l'activité (colonne `IdActivité`), l'enquêteur par la colonne « Identification de l'enquêteur » (ou « Enqueteur » en hôpital), sans tenir compte des accents ni des majuscules. Le personnel n'utilisant pas de code, ses réponses sont comptées sur la période de l'activité (et, pour un hôpital, sur la formation sanitaire correspondant au nom de l'activité).
+
+
+## Inscription des enquêteurs, objectif unique et montant à payer (v14)
+**Installation** : remplacez `Code.gs`, exécutez une fois **`setupSuivi`** (crée la feuille `SuiviParams` et ajoute la colonne `Numéro` à la feuille `Enqueteurs`), déployez une **nouvelle version**, puis déposez les fichiers sur GitHub (nouvelle page `Enqueteur.html`).
+
+**1. Inscription à la première connexion** : après le scan du code QR de l'activité, l'enquêteur renseigne **nom, prénom et numéro d'enquêteur** (`Enqueteur.html`). Le numéro est unique dans l'activité (« 07 » et « 7 » sont le même numéro) ; un numéro déjà pris par une autre personne est refusé. Ensuite, dans tous les formulaires d'enquête, le champ « Identification de l'enquêteur » n'est plus une liste « Enquêteur 1, 2… » : il est rempli **automatiquement avec le prénom**, et le serveur ajoute les colonnes `IdEnquêteur` et `N° enquêteur` (non falsifiables). Le lien « Ce n'est pas moi » du bandeau permet de changer d'enquêteur sur un appareil. Sans activité (simple code d'accès), l'ancienne liste déroulante reste en place.
+
+**2. Facture et attestation** : la page `Facture.html` reprend l'identité de l'inscription (nom, prénom, numéro). L'enquêteur y dépose sa facture normalisée à la fin du travail, puis télécharge son attestation après validation. Les enquêteurs déjà enregistrés avant la v14 (sans numéro) sont retrouvés par nom et prénom, et leur numéro est complété à leur prochaine inscription ou dépôt.
+
+**3. Suivi** (`AdminSuivi.html`) : la liste des enquêteurs est celle des **inscrits** (même sans aucune réponse). Les réponses sont rattachées à chaque enquêteur par son identifiant ; les réponses sans inscription (anciennes, ou code sans activité) apparaissent à part, marquées « non inscrit ».
+
+**4. Objectif unique** (onglet Configuration) : un seul nombre de questionnaires **par cible**, identique pour tous les enquêteurs ; il s'applique automatiquement à chaque inscrit, y compris à ceux qui s'inscrivent après. D'anciens objectifs individuels (v13) sont repris comme objectif commun (valeur la plus fréquente) puis remplacés à l'enregistrement.
+
+**5. Montant total à payer** (onglet Configuration, en FCFA) : réparti à parts égales entre les enquêteurs inscrits. Tarif par questionnaire = montant ÷ (nombre d'inscrits × objectif). Le per diem de chacun = tarif × questionnaires réalisés, **plafonnés à l'objectif de chaque cible** ; un enquêteur qui atteint son objectif perçoit sa part complète, sinon elle est réduite au prorata. La page de suivi affiche la section **💰 Paiement des enquêteurs** (montant total, part, tarif, total dû, reste non versé, montant par enquêteur) et l'inclut dans l'export en image.
+
+**Droits** : l'administrateur configure tout. Un superviseur d'activité peut désormais régler l'objectif et le montant des activités qui lui sont affectées ; seuls l'administrateur gère les comptes superviseurs, leurs affectations et l'effectif du personnel.

@@ -72,6 +72,7 @@
        if(next&&allowed.some(function(k){return FORM_FILES[level][k]===next.split('#')[0];}))dest=next;
        else if(allowed.length===1&&FORM_FILES[level][allowed[0]])dest=FORM_FILES[level][allowed[0]];
      } else if(next) dest=next;
+     if(a&&!getEnq(level))dest='Enqueteur.html?level='+level+'&next='+encodeURIComponent(dest);
      setTimeout(function(){location.replace(dest);},700);
    }).catch(function(e){busy=false;msg.className='err';msg.textContent=(e&&e.message)||'Erreur de connexion.';});
  }

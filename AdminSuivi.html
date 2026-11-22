@@ -123,7 +123,7 @@
    var lv=r.account.level;
    if(lv!=='admin'&&lv!=='superviseur_act'){err("Ce compte n'a pas accès au suivi de la collecte (administrateur ou superviseur d'activité).");return;}
    tok=r.token;me=r.account;err('');$('login').style.display='none';$('panel').style.display='block';$('logout').style.display='inline';
-   var adm=lv==='admin';$('adminLinks').style.display=adm?'inline':'none';$('t-conf').style.display=adm?'':'none';if(!adm)$('tabs').style.display='none';
+   var adm=lv==='admin';$('adminLinks').style.display=adm?'inline':'none';
    if(navigator.canShare&&navigator.share)$('shBtn').style.display='';
    loadList();
   }).catch(function(e){err(e.message||'Erreur de connexion.');});
@@ -192,9 +192,10 @@
    '<div class="kpi"><b>'+(t.objectif>0&&d.totalDays?num(t.attendu,1):'—')+'</b><span>Attendu à ce jour</span></div>'+
    '<div class="kpi"><b>'+(av!=null?num(av,1)+' %':'—')+'</b><span>Avancement</span></div>'+
    '<div class="kpi"><b>'+(d.totalDays?d.elapsed+' / '+d.totalDays:d.elapsed||'—')+'</b><span>Jours écoulés</span></div>'+
-   '<div class="kpi"><b>'+t.nbEnq+'</b><span>Enquêteur(s) actif(s)</span></div></div>';
+   '<div class="kpi"><b>'+t.nbInscrits+'</b><span>Enquêteur(s) inscrit(s)'+(t.nbInscrits?' · '+t.nbActifs+' actif(s)':'')+'</span></div>'+
+   (d.paiement&&d.paiement.montant!=null?'<div class="kpi"><b>'+num(d.paiement.montant)+'</b><span>Montant total à payer (FCFA)</span></div>':'')+'</div>';
   h+='<div class="sec"><h2>Évolution de la collecte par enquêteur</h2>';
-  if(!d.enqueteurs.length){h+='<div class="empty">Aucune réponse n\'a encore été reçue pour cette activité.</div>';}
+  if(!d.enqueteurs.length){h+='<div class="empty">Aucun enquêteur inscrit et aucune réponse reçue pour cette activité. Les enquêteurs s\'inscrivent (nom, prénom, numéro) à leur première connexion.</div>';}
   else{
    var ser=d.enqueteurs.slice(0,12).map(function(e,i){return {name:e.name,color:COLORS[i%COLORS.length],values:e.cumul};});
    var legend=ser.map(function(s){return '<span><i style="background:'+s.color+'"></i>'+esc(s.name)+'</span>';}).join('');
@@ -208,7 +209,7 @@
    h+='<div class="scroll"><table><thead><tr><th>Enquêteur</th>'+d.forms.map(function(f){return '<th class="n">'+FORM_LBL[f]+'</th>';}).join('')+'<th class="n">Total</th><th class="n">Objectif</th><th class="n">Attendu</th><th class="n">Écart</th><th style="min-width:110px">Avancement</th><th>Statut</th><th>Rythme / jour</th><th>Dernière saisie</th></tr></thead><tbody>';
    d.enqueteurs.forEach(function(e){
     var st=statusOf(e),pc=e.pct;
-    h+='<tr><td><b>'+esc(e.name)+'</b></td>'+d.forms.map(function(f){var r=e.byForm[f]||0,o=e.objByForm[f];return '<td class="n">'+num(r)+(o!=null?' <span style="color:#9aa3ad">/ '+num(o)+'</span>':'')+'</td>';}).join('')+
+    h+='<tr><td><b>'+esc(e.name)+'</b>'+(e.inscrit?' <small style="color:#6b7280">N° '+esc(e.numero)+'</small>':' <small style="color:#c0392b">non inscrit</small>')+'</td>'+d.forms.map(function(f){var r=e.byForm[f]||0,o=e.objByForm[f];return '<td class="n">'+num(r)+(o!=null?' <span style="color:#9aa3ad">/ '+num(o)+'</span>':'')+'</td>';}).join('')+
      '<td class="n"><b>'+num(e.total)+'</b></td><td class="n">'+(e.objectif!=null?num(e.objectif):'—')+'</td><td class="n">'+(e.attendu!=null?num(e.attendu,1):'—')+'</td>'+
      '<td class="n" style="color:'+(e.ecart==null?'#6b7280':e.ecart>=0?'#1a7f4b':'#c0392b')+'">'+(e.ecart==null?'—':(e.ecart>0?'+':'')+num(e.ecart,1))+'</td>'+
      '<td>'+(pc!=null?bar(pc,barColor(pc))+'<small>'+num(pc,1)+' %</small>':'—')+'</td><td><span class="pill '+st[0]+'">'+st[1]+'</span></td>'+
@@ -217,6 +218,19 @@
    h+='<tr style="font-weight:700;background:#fafbfc"><td>Ensemble</td>'+d.forms.map(function(f){var x=t.byForm[f];return '<td class="n">'+num(x.realise)+(x.objectif?' / '+num(x.objectif):'')+'</td>';}).join('')+'<td class="n">'+num(t.realise)+'</td><td class="n">'+(t.objectif?num(t.objectif):'—')+'</td><td class="n">'+(t.objectif&&d.totalDays?num(t.attendu,1):'—')+'</td><td></td><td colspan="4"></td></tr>';
    h+='</tbody></table></div><p class="hint" style="margin-top:8px">« Attendu » = objectif × jours écoulés ÷ durée de l\'activité. « Rythme requis » = ce qui reste à collecter ÷ jours restants.</p>';
   }else h+='<div class="empty">Aucun enquêteur pour le moment.</div>';
+  h+='</div>';
+  // paiement
+  var pm=d.paiement||{};
+  h+='<div class="sec"><h2>💰 Paiement des enquêteurs (per diem)</h2>';
+  if(!pm.defini){h+='<div class="empty">'+(pm.montant==null?'Montant total à payer non renseigné.':'Définissez l\'objectif par enquêteur et vérifiez qu\'au moins un enquêteur est inscrit.')+' Renseignez-les dans l\'onglet Configuration.</div>';}
+  else{
+   h+='<div class="kpis"><div class="kpi"><b>'+num(pm.montant)+'</b><span>Montant total à payer (FCFA)</span></div><div class="kpi"><b>'+num(pm.partParEnq)+'</b><span>Part par enquêteur si objectif atteint ('+pm.nbInscrits+' inscrits)</span></div><div class="kpi"><b>'+num(pm.tarif,2)+'</b><span>Tarif par questionnaire (FCFA)</span></div><div class="kpi"><b>'+num(pm.totalDu)+'</b><span>Total dû selon le réalisé</span></div><div class="kpi"><b>'+num(pm.reste)+'</b><span>Reste non versé (objectifs non atteints)</span></div></div>';
+   h+='<div class="scroll"><table><thead><tr><th>N°</th><th>Enquêteur</th><th class="n">Questionnaires retenus</th><th class="n">Objectif</th><th style="min-width:110px">Taux</th><th class="n">Montant à payer (FCFA)</th></tr></thead><tbody>';
+   d.enqueteurs.filter(function(e){return e.inscrit;}).slice().sort(function(a,b){return String(a.numero).localeCompare(String(b.numero),'fr',{numeric:true});}).forEach(function(e){
+    h+='<tr><td>'+esc(e.numero)+'</td><td><b>'+esc(e.name)+'</b> <small style="color:#6b7280">'+esc(e.nom)+'</small></td><td class="n">'+num(e.retenu)+'</td><td class="n">'+num(pm.objectifParEnq)+'</td><td>'+bar(e.pctPaye,barColor(e.pctPaye))+'<small>'+num(e.pctPaye,1)+' %</small></td><td class="n"><b>'+num(e.aPayer)+'</b></td></tr>';
+   });
+   h+='<tr style="font-weight:700;background:#fafbfc"><td colspan="5">Total à payer</td><td class="n">'+num(pm.totalDu)+'</td></tr></tbody></table></div><p class="hint" style="margin-top:8px">Montant à payer = tarif par questionnaire × questionnaires réalisés par l\'enquêteur (plafonnés à l\'objectif de chaque cible). Un enquêteur qui atteint son objectif perçoit sa part complète ; sinon, sa part est réduite au prorata.</p>';
+  }
   h+='</div>';
   // personnel
   var p=d.personnel;
@@ -250,34 +264,60 @@
   }).catch(function(e){btn.disabled=false;btn.textContent=old;err('Export impossible : '+(e&&e.message||e));});
  }
 
- /* ---------- Configuration (administrateur) ---------- */
- var st={assigned:{},rows:[],effTotal:'',effRows:[],forms:[],sups:[]};
+ /* ---------- Configuration ---------- */
+ var st={assigned:{},enqs:[],objGlobal:{},montant:'',effTotal:'',effRows:[],forms:[],sups:[]};
+ function isAdm(){return me&&me.level==='admin';}
  function loadConf(){
   $('v-conf').innerHTML='<div class="box"><div class="empty">Chargement…</div></div>';
   api('suiviConfig',{actId:cur}).then(function(r){
    cfg=r;st.forms=r.forms||[];st.sups=r.supervisors||[];st.assigned={};(r.assigned||[]).forEach(function(u){st.assigned[u]=1;});
-   var m={},rows=[];
-   function row(name){var k=name.toLowerCase();if(!m[k]){m[k]={enq:name,vals:{}};rows.push(m[k]);}return m[k];}
-   (r.detected||[]).forEach(function(n){row(n);});
-   (r.objectifs||[]).forEach(function(o){row(o.enq).vals[o.cible]=String(o.obj);});
-   st.rows=rows;
+   st.enqs=r.enqueteurs||[];st.objGlobal={};Object.keys(r.objGlobal||{}).forEach(function(f){st.objGlobal[f]=String(r.objGlobal[f]);});
+   st.montant=r.montant==null?'':String(r.montant);
    var tot='',er=[];(r.effectifs||[]).forEach(function(e){if(!e.structure)tot=String(e.effectif);else er.push({structure:e.structure,effectif:String(e.effectif)});});
    st.effTotal=tot;st.effRows=er;drawConf();
   }).catch(function(e){$('v-conf').innerHTML='';err(e.message);});
  }
  function a_(){return acts.filter(function(a){return a.id===cur;})[0]||{};}
  function drawConf(){
-  var a=a_(),h='';
-  h+='<div class="box"><h2>👤 Superviseurs de l\'activité « '+esc(a.name||'')+' »</h2><p class="hint">Un superviseur d\'activité ne voit que le suivi des activités qui lui sont affectées. Cochez ceux qui suivent cette activité.</p><div id="supList"></div>'+
-   '<h3 style="margin-top:14px">Créer un compte superviseur</h3><div class="grid g3"><div><label class="l" for="ns-u">Identifiant</label><input id="ns-u" placeholder="ex. sup.djidja" autocapitalize="none"></div><div><label class="l" for="ns-l">Nom affiché</label><input id="ns-l" placeholder="Nom et prénom"></div><div><label class="l" for="ns-p">Mot de passe (8 caractères min.)</label><input id="ns-p" type="text" autocomplete="off"></div></div><div class="row"><button class="pri" onclick="createSup()">➕ Créer le superviseur</button></div></div>';
-  h+='<div class="box"><h2>🎯 Objectifs par enquêteur et par cible</h2><p class="hint">Nombre de questionnaires attendu de chaque enquêteur sur toute la période de l\'activité. Les enquêteurs apparaissent dès leur première réponse ; vous pouvez aussi en ajouter à l\'avance (écrire le nom exactement comme dans le formulaire).</p><div id="objTb"></div>'+
-   '<div class="row"><input id="newEnq" placeholder="Ajouter un enquêteur (nom)" style="min-width:220px"><button class="alt" onclick="addEnq()">➕ Ajouter</button></div></div>';
-  h+='<div class="box"><h2>🧑‍⚕️ Effectif du personnel</h2><p class="hint">Effectif à enquêter (formulaire « Personnel ») : le tableau de bord compare en temps réel les réponses reçues pendant la période à cet effectif. Renseignez le total, et/ou le détail par structure (nom tel qu\'écrit dans le formulaire).</p>'+
-   '<label class="l" for="effT" style="margin-top:0">Effectif total du personnel</label><input id="effT" inputmode="numeric" value="'+esc(st.effTotal)+'" placeholder="Laissez vide pour utiliser la somme des structures" style="max-width:340px">'+
-   '<div id="effTb" style="margin-top:10px"></div><div class="row"><button class="alt" onclick="addEff()">➕ Ajouter une structure</button></div></div>';
+  var a=a_(),h='',adm=isAdm();
+  if(adm){
+   h+='<div class="box"><h2>👤 Superviseurs de l\'activité « '+esc(a.name||'')+' »</h2><p class="hint">Un superviseur d\'activité ne voit que le suivi des activités qui lui sont affectées. Cochez ceux qui suivent cette activité.</p><div id="supList"></div>'+
+    '<h3 style="margin-top:14px">Créer un compte superviseur</h3><div class="grid g3"><div><label class="l" for="ns-u">Identifiant</label><input id="ns-u" placeholder="ex. sup.djidja" autocapitalize="none"></div><div><label class="l" for="ns-l">Nom affiché</label><input id="ns-l" placeholder="Nom et prénom"></div><div><label class="l" for="ns-p">Mot de passe (8 caractères min.)</label><input id="ns-p" type="text" autocomplete="off"></div></div><div class="row"><button class="pri" onclick="createSup()">➕ Créer le superviseur</button></div></div>';
+  }
+  h+='<div class="box"><h2>👥 Enquêteurs inscrits ('+st.enqs.length+')</h2><p class="hint">Liste issue de l\'inscription : chaque enquêteur renseigne son nom, son prénom et son numéro d\'enquêteur à sa première connexion (après le scan du code QR de l\'activité). Elle se met à jour toute seule ; l\'objectif ci-dessous s\'applique automatiquement à chacun, y compris à ceux qui s\'inscriront plus tard.</p><div id="enqList"></div><div class="row"><button class="alt" onclick="loadConf()">🔄 Actualiser la liste</button></div></div>';
+  h+='<div class="box"><h2>🎯 Objectif : nombre de personnes à enquêter par cible</h2><p class="hint">Tous les enquêteurs ont <b>le même objectif</b>. Indiquez, pour chaque cible, le nombre de questionnaires attendu de <b>chaque</b> enquêteur sur toute la période de l\'activité.</p><div id="objTb"></div></div>';
+  h+='<div class="box"><h2>💰 Montant total à payer</h2><p class="hint">Montant total prévu pour tous les enquêteurs de l\'activité (en FCFA). Il est réparti à parts égales entre les enquêteurs inscrits. Un enquêteur qui n\'atteint pas l\'objectif attendu perçoit son per diem au prorata du nombre de questionnaires réalisés.</p>'+
+   '<label class="l" for="montant" style="margin-top:0">Montant total à payer (FCFA)</label><input id="montant" inputmode="numeric" value="'+esc(st.montant)+'" placeholder="Ex. 1500000" style="max-width:340px"><div id="montantPrev" class="hint" style="margin-top:8px"></div></div>';
+  if(adm){
+   h+='<div class="box"><h2>🧑‍⚕️ Effectif du personnel</h2><p class="hint">Effectif à enquêter (formulaire « Personnel ») : le tableau de bord compare en temps réel les réponses reçues pendant la période à cet effectif. Renseignez le total, et/ou le détail par structure (nom tel qu\'écrit dans le formulaire).</p>'+
+    '<label class="l" for="effT" style="margin-top:0">Effectif total du personnel</label><input id="effT" inputmode="numeric" value="'+esc(st.effTotal)+'" placeholder="Laissez vide pour utiliser la somme des structures" style="max-width:340px">'+
+    '<div id="effTb" style="margin-top:10px"></div><div class="row"><button class="alt" onclick="addEff()">➕ Ajouter une structure</button></div></div>';
+  }
   h+='<div class="row" style="margin-bottom:30px"><button class="pri" id="saveBtn" onclick="saveConf()" style="padding:12px 22px">💾 Enregistrer la configuration</button><span class="hint" id="saveMsg" style="margin:0"></span></div>';
-  $('v-conf').innerHTML=h;drawSups();drawObj();drawEff();
-  $('effT').oninput=function(){st.effTotal=this.value;};
+  $('v-conf').innerHTML=h;drawEnqs();drawObj();updatePrev();
+  if(adm){drawSups();drawEff();$('effT').oninput=function(){st.effTotal=this.value;};}
+  $('montant').oninput=function(){st.montant=this.value;updatePrev();};
+ }
+ function drawEnqs(){
+  var b=$('enqList');if(!b)return;
+  if(!st.enqs.length){b.innerHTML='<div class="empty">Aucun enquêteur inscrit pour le moment. Ils apparaîtront ici dès leur première connexion.</div>';return;}
+  var l=st.enqs.slice().sort(function(x,y){return String(x.numero).localeCompare(String(y.numero),'fr',{numeric:true});});
+  b.innerHTML='<div class="scroll"><table class="cfgtb"><thead><tr><th style="width:90px">N°</th><th>Prénom</th><th>Nom</th></tr></thead><tbody>'+l.map(function(e){return '<tr><td><b>'+esc(e.numero||'—')+'</b></td><td>'+esc(e.prenom)+'</td><td>'+esc(e.nom)+'</td></tr>';}).join('')+'</tbody></table></div>';
+ }
+ function drawObj(){
+  var b=$('objTb');if(!b)return;
+  var n=st.enqs.length;
+  b.innerHTML='<div class="scroll"><table class="cfgtb"><thead><tr><th>Cible</th><th style="width:150px">Par enquêteur</th><th class="n">Pour les '+n+' inscrit(s)</th></tr></thead><tbody>'+
+   st.forms.map(function(f){var v=Number(st.objGlobal[f]);return '<tr><td><b>'+FORM_LBL[f]+'</b></td><td><input inputmode="numeric" data-f="'+f+'" value="'+esc(st.objGlobal[f]||'')+'" placeholder="0"></td><td class="n" id="objTot-'+f+'">'+(isNaN(v)||st.objGlobal[f]===undefined||st.objGlobal[f]===''?'—':num(v*n))+'</td></tr>';}).join('')+'</tbody></table></div>';
+  b.oninput=function(ev){var t=ev.target;if(t.dataset.f){st.objGlobal[t.dataset.f]=t.value;var v=Number(String(t.value).replace(/\s/g,'')),c=$('objTot-'+t.dataset.f);if(c)c.textContent=(t.value===''||isNaN(v))?'—':num(v*st.enqs.length);updatePrev();}};
+ }
+ function updatePrev(){
+  var e=$('montantPrev');if(!e)return;
+  var m=Number(String(st.montant).replace(/\s/g,'').replace(',','.')),n=st.enqs.length,each=0;
+  st.forms.forEach(function(f){var v=Number(String(st.objGlobal[f]==null?'':st.objGlobal[f]).replace(/\s/g,''));if(v>0)each+=v;});
+  if(st.montant===''||isNaN(m)){e.textContent='';return;}
+  if(!n||!each){e.textContent='Définissez l\'objectif et attendez au moins un enquêteur inscrit pour voir la répartition.';return;}
+  e.innerHTML='Avec <b>'+n+'</b> enquêteur(s) inscrit(s) et un objectif de <b>'+num(each)+'</b> questionnaire(s) chacun : part par enquêteur = <b>'+num(m/n)+' FCFA</b>, soit <b>'+num(m/(n*each),2)+' FCFA</b> par questionnaire.';
  }
  function drawSups(){
   var b=$('supList');if(!b)return;
@@ -302,21 +342,6 @@
    st.sups.push({username:r.username,label:r.label,active:true});st.assigned[r.username]=1;$('ns-u').value=$('ns-l').value=$('ns-p').value='';drawSups();toast('Superviseur créé et affecté à cette activité (pensez à enregistrer)');err('');
   }).catch(function(e){err(e.message);});
  }
- function drawObj(){
-  var b=$('objTb');if(!b)return;
-  if(!st.rows.length){b.innerHTML='<div class="empty">Aucun enquêteur détecté pour le moment : ajoutez-en ci-dessous, ou attendez les premières réponses.</div>';return;}
-  var h='<div class="scroll"><table class="cfgtb"><thead><tr><th>Enquêteur</th>'+st.forms.map(function(f){return '<th style="min-width:110px">'+FORM_LBL[f]+'</th>';}).join('')+'<th></th></tr></thead><tbody>';
-  st.rows.forEach(function(r,i){h+='<tr><td><b>'+esc(r.enq)+'</b></td>'+st.forms.map(function(f){return '<td><input inputmode="numeric" data-i="'+i+'" data-f="'+f+'" value="'+esc(r.vals[f]||'')+'" placeholder="0"></td>';}).join('')+'<td><button class="dng" data-rm="'+i+'" style="padding:5px 9px">✕</button></td></tr>';});
-  h+='<tr style="background:#fafbfc"><td><i>Même objectif pour tous</i></td>'+st.forms.map(function(f){return '<td><div style="display:flex;gap:4px"><input inputmode="numeric" id="all-'+f+'" placeholder="N"><button class="alt" data-all="'+f+'" style="padding:5px 9px">OK</button></div></td>';}).join('')+'<td></td></tr></tbody></table></div>';
-  b.innerHTML=h;
-  b.oninput=function(ev){var t=ev.target;if(t.dataset.i!==undefined)st.rows[+t.dataset.i].vals[t.dataset.f]=t.value;};
-  b.onclick=function(ev){
-   var t=ev.target.closest('button');if(!t)return;
-   if(t.dataset.rm!==undefined){st.rows.splice(+t.dataset.rm,1);drawObj();}
-   else if(t.dataset.all){var v=$('all-'+t.dataset.all).value;st.rows.forEach(function(r){r.vals[t.dataset.all]=v;});drawObj();}
-  };
- }
- function addEnq(){var n=$('newEnq').value.replace(/\s+/g,' ').trim();if(!n)return;if(st.rows.some(function(r){return r.enq.toLowerCase()===n.toLowerCase();})){toast('Déjà dans la liste');return;}st.rows.push({enq:n,vals:{}});$('newEnq').value='';drawObj();}
  function drawEff(){
   var b=$('effTb');if(!b)return;
   if(!st.effRows.length){b.innerHTML='<div class="hint">Aucune structure détaillée.</div>';return;}
@@ -326,12 +351,16 @@
  }
  function addEff(){st.effRows.push({structure:'',effectif:''});drawEff();}
  function saveConf(){
-  var objs=[];st.rows.forEach(function(r){st.forms.forEach(function(f){var v=String(r.vals[f]==null?'':r.vals[f]).trim();if(v!=='')objs.push({enq:r.enq,cible:f,obj:v});});});
-  var eff=[];if(String(st.effTotal).trim()!=='')eff.push({structure:'',effectif:st.effTotal});
-  st.effRows.forEach(function(r){if(String(r.structure).trim()&&String(r.effectif).trim()!=='')eff.push({structure:r.structure,effectif:r.effectif});});
+  var cf={objGlobal:{},montant:String(st.montant).trim()};
+  st.forms.forEach(function(f){var v=String(st.objGlobal[f]==null?'':st.objGlobal[f]).trim();if(v!=='')cf.objGlobal[f]=v;});
+  if(isAdm()){
+   var eff=[];if(String(st.effTotal).trim()!=='')eff.push({structure:'',effectif:st.effTotal});
+   st.effRows.forEach(function(r){if(String(r.structure).trim()&&String(r.effectif).trim()!=='')eff.push({structure:r.structure,effectif:r.effectif});});
+   cf.supervisors=Object.keys(st.assigned);cf.effectifs=eff;
+  }
   var b=$('saveBtn');b.disabled=true;
-  api('suiviSave',{actId:cur,cfg:{supervisors:Object.keys(st.assigned),objectifs:objs,effectifs:eff}}).then(function(r){
-   b.disabled=false;$('saveMsg').textContent='✅ Enregistré : '+r.superviseurs+' superviseur(s), '+r.objectifs+' objectif(s), '+r.effectifs+' ligne(s) d\'effectif.';toast('Configuration enregistrée');err('');
+  api('suiviSave',{actId:cur,cfg:cf}).then(function(r){
+   b.disabled=false;$('saveMsg').textContent='✅ Enregistré : objectif commun pour '+r.objectifs+' cible(s)'+(r.montant!=null?', montant total '+num(r.montant)+' FCFA':'')+(r.superviseurs!=null?', '+r.superviseurs+' superviseur(s)':'')+(r.effectifs!=null?', '+r.effectifs+' ligne(s) d\'effectif':'')+'.';toast('Configuration enregistrée');err('');
   }).catch(function(e){b.disabled=false;err(e.message);});
  }
 </script></body></html>

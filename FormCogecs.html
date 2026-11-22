@@ -158,7 +158,13 @@ function recomputeVisibility(){
 function renderCascading(){
   // Commune / Arrondissement / Structure — always inserted first
   let html = `<div class="group"><h2>📍 Localisation</h2>`;
-  if (HAS_ENQUETEUR){
+  const regEnq = (typeof getEnq === 'function') ? getEnq() : null;
+  if (HAS_ENQUETEUR && regEnq){
+    // Enquêteur inscrit (nom, prénom, numéro saisis à la première connexion) : identification automatique, par le prénom
+    currentAnswers["Identification de l'enquêteur"] = regEnq.prenom;
+    html += `<div class="field"><label class="qlabel">Identification de l'enquêteur</label>
+      <div style="padding:10px 12px;background:#eef3f8;border-radius:10px">👤 <b>${escapeHtml(regEnq.prenom)}</b> <small style="color:#6b7280">· N° ${escapeHtml(regEnq.numero)}</small></div></div>`;
+  } else if (HAS_ENQUETEUR){
     html += `<div class="field"><label class="qlabel">Identification de l'enquêteur<span class="req"> *</span></label>
       <select id="sel_enqueteur" onchange="currentAnswers[\"Identification de l\\'enquêteur\"]=this.value">
       <option value="">-- Choisir --</option>` +

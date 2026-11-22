@@ -45,9 +45,10 @@
   <div class="box">
    <h1>🧾 Déposer ma facture</h1>
    <div class="act" id="actBanner"></div>
-   <p>À la fin de l'activité, indiquez votre identité et joignez votre <b>facture normalisée (PDF)</b>. Vous pouvez en ajouter plusieurs, à plusieurs moments. Votre attestation sera établie à partir de ces informations, après validation par l'administrateur.</p>
+   <p>À la fin de l'activité, joignez votre <b>facture normalisée (PDF)</b>. Votre identité (nom, prénom, numéro d'enquêteur) est celle de votre inscription. Vous pouvez ajouter plusieurs factures, à plusieurs moments. Votre attestation sera établie à partir de ces informations, après validation par l'administrateur.</p>
    <label for="nom">Nom</label><input id="nom" type="text" autocomplete="family-name" autocapitalize="characters">
    <label for="prenom">Prénom(s)</label><input id="prenom" type="text" autocomplete="given-name" autocapitalize="words">
+   <label for="numero">Numéro d'enquêteur</label><input id="numero" type="text" autocomplete="off" autocapitalize="characters" placeholder="Ex. 07">
    <label>Factures normalisées (PDF, 5 Mo maximum chacune)</label>
    <input id="pick" type="file" accept="application/pdf,.pdf" multiple style="display:none">
    <button class="alt" id="add" style="margin-top:4px">➕ Ajouter une facture (PDF)</button>
@@ -67,7 +68,7 @@
 
  <section id="v-att" class="box" style="display:none">
   <h1>🎓 Mon attestation</h1>
-  <p id="attP">Saisissez votre nom et prénom ci-dessus (les mêmes que pour votre facture), puis vérifiez.</p>
+  <p id="attP">Vérifiez vos informations ci-dessus (nom, prénom et numéro d'enquêteur, les mêmes que pour votre inscription), puis cliquez sur « Vérifier ».</p>
   <button id="attGo" class="alt">🔍 Vérifier mon attestation</button>
   <button id="attDl" style="display:none">⬇️ Télécharger mon attestation (PDF)</button>
   <div id="attMsg" style="margin-top:10px;font-size:.9rem"></div>
@@ -96,7 +97,7 @@
  function openForm(){
   var per=(act.debut||act.fin)?' · '+(act.debut?'du '+frDate(act.debut):'')+(act.fin?' au '+frDate(act.fin):''):'';
   $('actBanner').textContent='📅 '+act.name+(act.cible?' — '+act.cible:'')+per;
-  try{var id=JSON.parse(load('fact_ident')||'null');if(id){if(!$('nom').value)$('nom').value=id.nom||'';if(!$('prenom').value)$('prenom').value=id.prenom||'';}}catch(e){}
+  try{var id=getEnqByCode(code)||JSON.parse(load('fact_ident')||'null');if(id){if(!$('nom').value)$('nom').value=id.nom||'';if(!$('prenom').value)$('prenom').value=id.prenom||'';if(!$('numero').value)$('numero').value=id.numero||'';}}catch(e){}
   show('v-form');draw();$('v-att').style.display='block';attStatus(true);
  }
  function tryCode(c,quiet){
@@ -146,18 +147,18 @@
 
  /* ---------- Envoi ---------- */
  $('send').onclick=function(){
-  var nom=$('nom').value.trim(),prenom=$('prenom').value.trim();
-  if(!nom||!prenom){say('Indiquez votre nom et votre prénom.','err');return;}
+  var nom=$('nom').value.trim(),prenom=$('prenom').value.trim(),numero=$('numero').value.trim();
+  if(!nom||!prenom||!numero){say('Indiquez votre nom, votre prénom et votre numéro d\'enquêteur.','err');return;}
   if(!files.length||busy)return;
   if(!navigator.onLine){say("Pas de connexion Internet : l'envoi est impossible pour l'instant. Réessayez dès que la connexion revient.",'err');return;}
-  store('fact_ident',JSON.stringify({nom:nom,prenom:prenom}));
+  store('fact_ident',JSON.stringify({nom:nom,prenom:prenom,numero:numero}));
   busy=true;draw();say('');$('done').style.display='none';
   var total=files.length,sent=0,last=null,bar=$('bar');bar.style.display='block';bar.firstChild.style.width='4%';
   function next(){
    if(!files.length){busy=false;bar.style.display='none';finish(total,last);return;}
    var batch=files.slice(0,BATCH);
    Promise.all(batch.map(function(f){return b64(f).then(function(s){return {name:f.name,b64:s};});})).then(function(items){
-    return callApi('submitFacture',{code:code,nom:nom,prenom:prenom,files:items});
+    return callApi('submitFacture',{code:code,nom:nom,prenom:prenom,numero:numero,files:items});
    }).then(function(r){
     if(r&&r.error==='ACT_INVALID'){busy=false;bar.style.display='none';gate("Cette activité n'accepte plus de dépôt (désactivée ou terminée depuis trop longtemps). Scannez le code de la bonne activité ou contactez l'administrateur.");return;}
     if(!r||!r.ok){busy=false;bar.style.display='none';draw();say(((r&&r.error)||'Échec de l\'envoi.')+(sent?' ('+sent+' facture(s) déjà envoyée(s).)':''),'err');return;}
@@ -183,18 +184,18 @@
  }
  function attMsg(t,c){var m=$('attMsg');m.className=c||'';m.textContent=t||'';}
  function attStatus(auto){
-  var nom=$('nom').value.trim(),prenom=$('prenom').value.trim();
+  var nom=$('nom').value.trim(),prenom=$('prenom').value.trim(),numero=$('numero').value.trim();
   attData=null;$('attDl').style.display='none';
-  if(!nom||!prenom){if(!auto)attMsg('Indiquez votre nom et votre prénom.','err');return;}
+  if(!nom||!prenom||!numero){if(!auto)attMsg('Indiquez votre nom, votre prénom et votre numéro d\'enquêteur.','err');return;}
   if(!navigator.onLine){if(!auto)attMsg('Pas de connexion Internet.','err');return;}
   $('attGo').disabled=true;if(!auto)attMsg('Vérification…');
-  callApi('getAttestation',{code:code,nom:nom,prenom:prenom}).then(function(r){
+  callApi('getAttestation',{code:code,nom:nom,prenom:prenom,numero:numero}).then(function(r){
    $('attGo').disabled=false;
    if(r&&r.error==='ACT_INVALID'){attMsg("Cette activité n'est plus ouverte.",'err');return;}
    if(!r||!r.ok){attMsg((r&&r.error)||'Erreur.','err');return;}
    if(r.status==='valide'){attData=r;$('attDl').style.display='block';$('attP').textContent='Votre attestation a été validée par l\'administrateur.';attMsg('✅ Attestation prête pour '+r.nom+' '+r.prenom+'.','ok');}
    else if(r.status==='attente'){attMsg('⏳ Votre dossier est bien enregistré ('+r.factures+' facture'+(r.factures>1?'s':'')+'). Votre attestation sera disponible ici dès sa validation par l\'administrateur.');}
-   else if(!auto)attMsg("Aucun dépôt trouvé à ce nom pour cette activité. Vérifiez l'orthographe de votre nom et prénom, ou déposez d'abord votre facture.",'err');
+   else if(!auto)attMsg("Aucun dossier trouvé pour cette identité dans cette activité. Vérifiez votre nom, prénom et numéro d'enquêteur, ou déposez d'abord votre facture.",'err');
   }).catch(function(e){$('attGo').disabled=false;if(!auto)attMsg((e&&e.message)||'Erreur de connexion.','err');});
  }
  $('attGo').onclick=function(){attStatus(false);};

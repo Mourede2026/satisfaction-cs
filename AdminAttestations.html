@@ -226,14 +226,14 @@
   var m=missing(a);
   $('warn').innerHTML=m.length?'<div class="warn">⚠️ Pour générer les attestations, renseignez et enregistrez : '+m.join(', ')+'.</div>':'';
   $('zipBtn').disabled=!v||m.length>0;
-  var list=all.filter(function(e){return !q||(e.nom+' '+e.prenom).toLowerCase().indexOf(q)>-1;}).sort(function(x,y){return (x.nom+x.prenom).localeCompare(y.nom+y.prenom,'fr');});
+  var list=all.filter(function(e){return !q||(e.nom+' '+e.prenom+' '+(e.numero||'')).toLowerCase().indexOf(q)>-1;}).sort(function(x,y){return (x.nom+x.prenom).localeCompare(y.nom+y.prenom,'fr');});
   if(!list.length){box.innerHTML='<p class="hint" style="margin-top:12px">'+(all.length?'Aucun résultat.':"Aucun enquêteur n'a encore déposé de facture pour cette activité.")+'</p>';return;}
   box.innerHTML='';
   list.forEach(function(e){
    var d=document.createElement('div');d.className='tb';d.dataset.id=e.id;
    var fac=e.factures.length;
    d.innerHTML=
-    '<div class="nm"><span class="n">'+esc(e.nom)+' '+esc(e.prenom)+'</span><small>Déposé le '+esc((e.created||'').slice(0,10).split('-').reverse().join('/'))+'</small>'+
+    '<div class="nm"><span class="n">'+esc(e.nom)+' '+esc(e.prenom)+(e.numero?' <small style="color:#6b7280">N° '+esc(e.numero)+'</small>':'')+'</span><small>Inscrit le '+esc((e.created||'').slice(0,10).split('-').reverse().join('/'))+'</small>'+
      '<div class="row" style="margin-top:4px"><button class="alt" data-k="edit" style="padding:3px 9px;font-size:.75rem">✎ Modifier</button><button class="dng" data-k="del" style="padding:3px 9px;font-size:.75rem">🗑</button></div></div>'+
     '<div><details'+(openRows[e.id]?' open':'')+'><summary>'+fac+' facture'+(fac>1?'s':'')+(fac?'':' ⚠️')+'</summary>'+
      e.factures.map(function(f){return '<div class="fl"><span>📄 '+esc(f.name)+' <small style="color:#6b7280">('+size(f.size)+')</small></span><button class="alt" data-k="open" data-f="'+f.id+'">Ouvrir</button><button class="alt" data-k="dlf" data-f="'+f.id+'" title="Télécharger">⬇️</button><button class="dng" data-k="delf" data-f="'+f.id+'">🗑</button></div>';}).join('')+

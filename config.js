@@ -38,6 +38,27 @@ function setQr(level, token, label) {
 function clearQr(level) {
   localStorage.removeItem(QR_KEYS[level]); localStorage.removeItem(QR_KEYS[level] + "_label"); localStorage.removeItem(QR_KEYS[level] + "_act");
 }
+// Enquêteur inscrit (nom, prénom, numéro) : saisi une seule fois par activité, mémorisé avec le code de l'activité
+function getEnq(level) {
+  try {
+    var e = JSON.parse(localStorage.getItem("enq_" + (level || pageLevel())) || "null");
+    return e && e.id && e.code && e.code === getQr(level) ? e : null;
+  } catch (x) { return null; }
+}
+function setEnq(level, e) {
+  try {
+    localStorage.setItem("enq_" + level, JSON.stringify(e));
+    localStorage.setItem("enq_last", JSON.stringify({ nom: e.nom, prenom: e.prenom, numero: e.numero }));
+  } catch (x) {}
+}
+function clearEnq(level) { try { localStorage.removeItem("enq_" + level); } catch (x) {} }
+// Enquêteur déjà inscrit pour ce code d'activité (quel que soit le niveau) : sert à pré-remplir la page Facture
+function getEnqByCode(code) {
+  var f = null;
+  ["zone", "hopital"].forEach(function (lv) { try { var e = JSON.parse(localStorage.getItem("enq_" + lv) || "null"); if (e && e.id && code && e.code === code) f = e; } catch (x) {} });
+  return f;
+}
+function lastEnqIdent() { try { return JSON.parse(localStorage.getItem("enq_last") || "null") || {}; } catch (x) { return {}; } }
 // Activité scannée (nom, cible, formulaires autorisés, dates) : mémorisée avec le code
 function getActivity(level) { try { return JSON.parse(localStorage.getItem(QR_KEYS[level || pageLevel()] + "_act") || "null"); } catch (e) { return null; } }
 function setActivity(level, a) { if (a) localStorage.setItem(QR_KEYS[level] + "_act", JSON.stringify(a)); else localStorage.removeItem(QR_KEYS[level] + "_act"); }
@@ -49,6 +70,8 @@ function callApi(action, data, password) {
   if (!apiUrl() || apiUrl().indexOf("COLLEZ_ICI") !== -1) {
     return Promise.reject(new Error("API_URL non configurée : modifiez config.js"));
   }
+  // Enquêteur inscrit : son identifiant accompagne chaque réponse (le serveur y associe prénom et numéro) ; pas pour les formulaires du personnel
+  if (/^submit/.test(action) && !/Personnel/.test(action) && data && !data._enq) { var _e = getEnq(); if (_e) data._enq = _e.id; }
   if (/^submit/.test(action) && data && !data._cid) data._cid = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(16).slice(2);
   return fetch(apiUrl(), {
     method: "POST",
@@ -81,6 +104,8 @@ function callApi(action, data, password) {
   var to = function (extra) { return "Acces.html?level=" + level + "&next=" + encodeURIComponent(here) + (extra || ""); };
   window.qrExit = function () { clearQr(level); location.replace(to("&expired=1")); };
   if (!getQr(level)) { location.replace(to()); return; }
+  // Première connexion dans une activité : l'enquêteur renseigne d'abord nom, prénom et numéro d'enquêteur
+  if (getActivity(level) && !getEnq(level)) { location.replace("Enqueteur.html?level=" + level + "&next=" + encodeURIComponent(here)); return; }
   function verify() {
     if (!navigator.onLine) return;
     callApi("checkQr", { token: getQr(level), level: level }).then(function (r) {
@@ -98,6 +123,12 @@ document.addEventListener("DOMContentLoaded", function () {
   var d = document.createElement("div");
   d.style.cssText = "background:#e6f6ee;color:#1a7f4b;padding:8px 14px;font-size:.85rem;text-align:center";
   d.textContent = "📅 Activité : " + a.name + (a.cible ? " — " + a.cible : "");
+  var en = getEnq();
+  if (en) {
+    d.appendChild(document.createTextNode(" · 👤 " + en.prenom + " (N° " + en.numero + ") "));
+    var ch = document.createElement("a"); ch.href = "Enqueteur.html?change=1&level=" + pageLevel() + "&next=" + encodeURIComponent(location.pathname.split("/").pop());
+    ch.textContent = "Ce n'est pas moi"; ch.style.cssText = "color:#0f4c81;margin-left:4px"; d.appendChild(ch);
+  }
   var anchor = document.getElementById("status-banner") || document.querySelector("main");
   if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(d, anchor);
 });
