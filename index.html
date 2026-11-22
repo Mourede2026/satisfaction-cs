@@ -22,6 +22,7 @@
   .card p{margin:0;color:#6b7280;font-size:.88rem}
   .card .tag{display:inline-block;margin-top:8px;font-size:.75rem;padding:3px 10px;border-radius:999px;background:#eef3f8;color:var(--brand)}
   .card .tag.ok{background:#e6f6ee;color:#1a7f4b}
+  .card .cnt{display:inline-block;margin-top:8px;margin-left:6px;font-size:.8rem;font-weight:700;padding:3px 10px;border-radius:999px;background:var(--brand);color:#fff}
   .card.admin{border-left-color:#6b7280}
   .card.off{border-left-color:#c9d0d8;opacity:.6;pointer-events:none}
   .back{display:inline-block;margin-bottom:6px;color:var(--brand);text-decoration:none;font-size:.9rem;background:none;border:0;cursor:pointer;padding:6px 0;font-family:inherit}
@@ -89,6 +90,8 @@
 
   function renderCibles(level){
     var L = LEVELS[level], has = !!getQr(level);
+    // Activité scannée : l'enquêteur doit d'abord s'inscrire (nom, prénom, numéro) avant de collecter
+    if (has && getActivity(level) && !getEnq(level)) { location.replace('Enqueteur.html?level=' + level + '&next=' + encodeURIComponent('index.html#' + level)); return; }
     $('cTitle').textContent = L.title; $('cSub').textContent = L.sub;
     var acc = $('cAccess'); acc.innerHTML = '';
     var act = has ? getActivity(level) : null;
@@ -117,7 +120,23 @@
       var tag = !c.href ? 'Bientôt disponible' : (!c.code ? '✅ Accès libre, sans code' : (has ? '✅ Code saisi' : '🔑 Code requis'));
       a.innerHTML = '<span class="emoji">' + c.e + '</span><h3>' + c.t + '</h3><p>' + c.d + '</p>' + (c.href ? '<span class="tag' + ((!c.code || has) ? ' ok' : '') + '">' + tag + '</span>' : '<span class="tag">' + tag + '</span>');
       box.appendChild(a);
+      if (c.href && c.key && act2) { var en = getEnq(level); if (en) showCount(a, level, c, en, act2); }
     });
+  }
+  // Nombre d'enregistrements de l'enquêteur pour cette cible : total serveur + réponses encore en attente sur l'appareil
+  function pendingOf(qk){ try { return JSON.parse(localStorage.getItem('queue_' + qk) || '[]').length; } catch (e) { return 0; } }
+  function showCount(a, level, c, en, act){
+    var qk = c.key + (level === 'hopital' ? '_hopital' : ''), ck = 'cnt_' + en.id + '_' + c.key, span = el('span', 'cnt', '');
+    function draw(n){ span.textContent = '📊 ' + n + ' enregistrement' + (n > 1 ? 's' : ''); }
+    var cached = null; try { cached = JSON.parse(localStorage.getItem(ck) || 'null'); } catch (e) {}
+    draw((cached ? cached.n : 0) + pendingOf(qk)); a.appendChild(span);
+    if (!navigator.onLine) return;
+    callApi('myCounts', {code: getQr(level), id: en.id}).then(function(r){
+      if (r && r.ok && r.counts && typeof r.counts[c.key] === 'number') {
+        try { localStorage.setItem(ck, JSON.stringify({n: r.counts[c.key]})); } catch (e) {}
+        draw(r.counts[c.key] + pendingOf(qk));
+      }
+    }).catch(function(){});
   }
   function route(){
     var h = (location.hash || '').replace('#', '');

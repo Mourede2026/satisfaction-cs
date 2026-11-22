@@ -50,6 +50,7 @@ function doPost(e) {
     else if (action === "submitCommunauteHopital") out = appendRecord_(SHEET_COMMUNAUTE_H, d, 'dept');
     else if (action === "checkQr") out = { ok: true, valid: qrTokenValid_(d.token, d.level === 'hopital' ? ['enqueteur_hopital'] : d.level === 'zone' ? ['enqueteur'] : QR_ROLES) };
     else if (action === "registerEnqueteur") out = handleRegisterEnqueteur(d);
+    else if (action === "myCounts") out = handleMyCounts(d);
     else if (action === "submitFacture") out = handleSubmitFacture(d);
     else if (action === "matchFactureCode") out = handleMatchFactureCode(d.text);
     else if (action === "getAttestation") out = handleGetAttestation(d);
@@ -1144,6 +1145,24 @@ function enqFind_(a, nom, prenom, numero) {
   return f;
 }
 /** Première connexion de l'enquêteur : nom, prénom et numéro d'enquêteur (accès par le code de son activité). */
+/** Nombre d'enregistrements d'un enquêteur inscrit, par cible, dans son activité (affiché sur les boutons de cibles). */
+function handleMyCounts(d) {
+  var a = activityForInvoice_(d.code); if (!a) return { ok: false, error: 'ACT_INVALID' };
+  var en = enqById_(a.id, d.id); if (!en) return { ok: false, error: 'ENQ_INVALID' };
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), counts = {};
+  (a.level === 'hopital' ? [['usagers', SHEET_USAGERS_H], ['communaute', SHEET_COMMUNAUTE_H]] : [['usagers', SHEET_USAGERS], ['cogecs', SHEET_COGECS]]).forEach(function (p) {
+    var n = 0, sh = ss.getSheetByName(p[1]);
+    if (sh && sh.getLastRow() > 1) {
+      var hm = buildHeaderMap_(sh).map, ci = hm[ENQ_ID_COL], ca = hm[ACT_ID_COL];
+      if (ci && ca) {
+        var rows = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(ci, ca)).getValues();
+        rows.forEach(function (r) { if (String(r[ci - 1]) === String(en.id) && String(r[ca - 1]) === String(a.id)) n++; });
+      }
+    }
+    counts[p[0]] = n;
+  });
+  return { ok: true, counts: counts };
+}
 function handleRegisterEnqueteur(d) {
   var a = activityForInvoice_(d.code); if (!a) return { ok: false, error: 'ACT_INVALID' };
   var nom = fmtNom_(d.nom), prenom = fmtPrenom_(d.prenom), numero = cleanNum_(d.numero);

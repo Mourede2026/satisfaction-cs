@@ -97,3 +97,11 @@ Penser à **Enregistrer la configuration**.
 **5. Montant total à payer** (onglet Configuration, en FCFA) : réparti à parts égales entre les enquêteurs inscrits. Tarif par questionnaire = montant ÷ (nombre d'inscrits × objectif). Le per diem de chacun = tarif × questionnaires réalisés, **plafonnés à l'objectif de chaque cible** ; un enquêteur qui atteint son objectif perçoit sa part complète, sinon elle est réduite au prorata. La page de suivi affiche la section **💰 Paiement des enquêteurs** (montant total, part, tarif, total dû, reste non versé, montant par enquêteur) et l'inclut dans l'export en image.
 
 **Droits** : l'administrateur configure tout. Un superviseur d'activité peut désormais régler l'objectif et le montant des activités qui lui sont affectées ; seuls l'administrateur gère les comptes superviseurs, leurs affectations et l'effectif du personnel.
+
+
+## Compteur par cible et inscription obligatoire (v15)
+**Installation** : remplacez `Code.gs` (nouvelle action `myCounts`), déployez une **nouvelle version**, puis déposez `index.html` et `sw.js` sur GitHub. Rien à exécuter.
+
+**Compteur** : sur l'accueil, chaque bouton de cible (Usagers, COGECS, Communauté) affiche « 📊 N enregistrements » : le nombre de questionnaires déjà reçus par le serveur pour cet enquêteur dans son activité, plus ceux encore en attente de synchronisation sur son appareil. Hors connexion, la dernière valeur connue est affichée.
+
+**Inscription obligatoire** : dès qu'une activité est scannée, l'enquêteur est redirigé vers `Enqueteur.html` (nom, prénom, numéro) avant de voir les cibles ou d'ouvrir un formulaire. Le superviseur voit tous les inscrits, même sans réponse, dans `AdminSuivi.html`.
