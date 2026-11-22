@@ -189,7 +189,7 @@ function login(){
       loadData(true);
       autoTimer = setInterval(()=>loadData(false), 30000); // auto-refresh 30s
     })
-    .catch(()=>{ document.getElementById('loginError').textContent = 'Erreur de connexion.'; });
+    .catch((e)=>{ document.getElementById('loginError').textContent = (e && e.message) || 'Erreur de connexion.'; });
 }
 
 function showPanel(id, el){

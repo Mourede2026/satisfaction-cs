@@ -38,7 +38,7 @@
      if(wantLevel&&level!==wantLevel){msg.className='err';msg.textContent=wantLevel==='hopital'?"Ce code est un code de zone sanitaire. Saisissez le code de l'hôpital.":"Ce code est un code d'hôpital. Saisissez le code de la zone sanitaire.";return;}
      setQr(level,code,r.label||'');
      location.replace(next||('index.html#'+level));
-   }).catch(function(){msg.className='err';msg.textContent='Erreur de connexion. Réessayez avec du réseau.';});
+   }).catch(function(e){msg.className='err';msg.textContent=(e&&e.message)||'Erreur de connexion.';});
  }
  if(p.get('code')) go(p.get('code'));
 </script></body></html>

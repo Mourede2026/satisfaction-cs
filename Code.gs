@@ -12,7 +12,7 @@ var SESSION_DURATION_MS = 12 * 60 * 60 * 1000;
 var QR_ROLES = ['enqueteur', 'personnel', 'enqueteur_hopital', 'personnel_hopital'];
 var QR_GUARD = {
   submitUsagers: ['enqueteur'], submitCogecs: ['enqueteur'], // submitPersonnels : libre d'accès (pas de code)
-  submitUsagersHopital: ['enqueteur_hopital'], submitPersonnelHopital: ['enqueteur_hopital'],
+  submitUsagersHopital: ['enqueteur_hopital'], // submitPersonnelHopital : libre d'accès (pas de code)
   submitCommunauteHopital: ['enqueteur_hopital'], submitActeursComHopital: ['enqueteur_hopital']
 };
 
@@ -33,7 +33,11 @@ function doPost(e) {
     else if (action === "submitPersonnelHopital") out = appendRecord_(SHEET_PERSONNELS_H, d, 'dept');
     else if (action === "submitCommunauteHopital") out = appendRecord_(SHEET_COMMUNAUTE_H, d, 'dept');
     else if (action === "submitActeursComHopital") out = appendRecord_(SHEET_ACTEURS_H, d, 'dept');
-    else if (action === "checkQr") out = { ok: true, valid: qrTokenValid_(d.token, QR_ROLES) };
+    else if (action === "checkQr") out = { ok: true, valid: qrTokenValid_(d.token, d.level === 'hopital' ? ['enqueteur_hopital'] : d.level === 'zone' ? ['enqueteur'] : QR_ROLES) };
+    else if (action === "listAccessCodes") out = handleListAccessCodes(d.token);
+    else if (action === "saveAccessCode") out = handleSaveAccessCode(d.token, d.level, d.name, d.code);
+    else if (action === "setAccessCodeActive") out = handleSetAccessCodeActive(d.token, d.level, d.name, d.active);
+    else if (action === "deleteAccessCode") out = handleDeleteAccessCode(d.token, d.level, d.name);
     else if (action === "getDashboardData") out = getDashboardData(d.token);
     else if (action === "accountLogin") out = handleAccountLogin(d.username, body.password);
     else if (action === "changePassword") out = handleChangePassword(d.token, body.password, d.newPassword);
@@ -314,6 +318,7 @@ function setupComptesEtQrTokens() {
   }
   getOrCreateSheet_(SESSIONS_SHEET_NAME, ['Token', 'Identifiant', 'Créée le']);
   getOrCreateSheet_(ENVOIS_SHEET_NAME, ['cid', 'date']);
+  codesSheet_();
   ensureQrRoles();
   Logger.log('Comptes, Sessions, QRTokens et Envois prêts.');
 }
@@ -326,16 +331,17 @@ function effacerMotsDePasse() {
   var s = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ACCOUNTS_SHEET_NAME);
   if (s && s.getLastRow() > 1 && s.getLastColumn() >= 10) s.getRange(2, 10, s.getLastRow() - 1, 1).clearContent();
 }
+var ACCOUNTS_HEADERS = ['Identifiant', 'Hash', 'Niveau', 'Département', 'Zone Sanitaire', 'Commune', 'Libellé', 'DernièreModification', 'Actif', '', 'MotDePasseInitial'];
 function findAccountRow_(username) {
-  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ACCOUNTS_SHEET_NAME);
-  if (!sh) return null;
+  var sh = getOrCreateSheet_(ACCOUNTS_SHEET_NAME, ACCOUNTS_HEADERS);
   var v = sh.getDataRange().getValues();
-  for (var i = 1; i < v.length; i++) if (v[i][0] === username) return { row: i + 1, data: v[i] };
+  username = String(username || '').trim();
+  for (var i = 1; i < v.length; i++) if (String(v[i][0]).trim() === username) return { row: i + 1, data: v[i] };
   return null;
 }
 function accountPublicView_(d) { return { username: d[0], level: d[2], departement: d[3], zone: d[4], commune: d[5], label: d[6], active: (d[8] === undefined || d[8] === '' || d[8] === 'OUI') }; }
 function createSession_(username) {
-  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SESSIONS_SHEET_NAME), v = sh.getDataRange().getValues(), now = Date.now();
+  var sh = getOrCreateSheet_(SESSIONS_SHEET_NAME, ['Token', 'Identifiant', 'Créée le']), v = sh.getDataRange().getValues(), now = Date.now();
   for (var i = v.length - 1; i >= 1; i--) if (now - new Date(v[i][2]).getTime() > SESSION_DURATION_MS) sh.deleteRow(i + 1);
   var token = Utilities.getUuid();
   sh.appendRow([token, username, new Date().toISOString()]);
@@ -358,8 +364,17 @@ function handleAccountLogin(username, password) {
   var f = findAccountRow_(username);
   if (!f) { loginEchec_(username); return { ok: false, error: 'Identifiant ou mot de passe incorrect.' }; }
   if (f.data[8] === 'NON') return { ok: false, error: 'Ce compte a été désactivé par un administrateur.' };
-  if (sha256Hex_(username + ':' + password) !== f.data[1]) { loginEchec_(username); return { ok: false, error: 'Identifiant ou mot de passe incorrect.' }; }
-  return { ok: true, token: createSession_(username), account: accountPublicView_(f.data) };
+  // Mot de passe saisi directement dans la feuille « Comptes » (colonne K « MotDePasseInitial ») :
+  // vérifié une fois, converti en empreinte (hash) puis effacé de la feuille.
+  var plain = f.data[10] === undefined || f.data[10] === null ? '' : String(f.data[10]).trim();
+  if (plain) {
+    if (String(password).trim() !== plain) { loginEchec_(username); return { ok: false, error: 'Identifiant ou mot de passe incorrect.' }; }
+    var sh = accountsSheet_();
+    sh.getRange(f.row, 2).setValue(sha256Hex_(String(f.data[0]).trim() + ':' + String(password).trim()));
+    sh.getRange(f.row, 11).clearContent();
+    f.data[0] = String(f.data[0]).trim();
+  } else if (sha256Hex_(String(f.data[0]).trim() + ':' + password) !== f.data[1]) { loginEchec_(username); return { ok: false, error: 'Identifiant ou mot de passe incorrect.' }; }
+  return { ok: true, token: createSession_(String(f.data[0]).trim()), account: accountPublicView_(f.data) };
 }
 function requireAdminSession_(token) {
   var s = token ? findSession_(token) : null;
@@ -368,7 +383,7 @@ function requireAdminSession_(token) {
   if (!a || a.data[2] !== 'admin' || a.data[8] === 'NON') return { ok: false, error: 'Réservé au compte administrateur.' };
   return { ok: true, acc: a };
 }
-function accountsSheet_() { return SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ACCOUNTS_SHEET_NAME); }
+function accountsSheet_() { return getOrCreateSheet_(ACCOUNTS_SHEET_NAME, ACCOUNTS_HEADERS); }
 function handleListAccounts(token) {
   var c = requireAdminSession_(token); if (!c.ok) return c;
   var v = accountsSheet_().getDataRange().getValues(), out = [];
@@ -442,8 +457,12 @@ function findQrRow_(role) {
 function qrTokenValid_(token, roles) {
   token = (token || '').toString().trim();
   if (!token) return false;
-  for (var i = 0; i < roles.length; i++) { var r = findQrRow_(roles[i]); if (r && String(r.token).trim() === token) return true; }
-  return false;
+  var levels = {};
+  for (var i = 0; i < roles.length; i++) {
+    var r = findQrRow_(roles[i]); if (r && String(r.token).trim() === token) return true;
+    if (roles[i] === 'enqueteur') levels.zone = 1; else if (roles[i] === 'enqueteur_hopital') levels.hopital = 1;
+  }
+  return accessCodesRows_().some(function (c) { return levels[c.level] && c.active && c.code === token; });
 }
 function handleGetQrToken(sessionToken, role) {
   var c = requireAdminSession_(sessionToken); if (!c.ok) return c;
@@ -484,8 +503,84 @@ function handleMatchQrCode(rawText) {
     });
   }
   cand = String(cand).trim();
-  for (var i = 0; i < QR_ROLES.length; i++) { var r = findQrRow_(QR_ROLES[i]); if (r && String(r.token).trim() === cand) return { ok: true, role: QR_ROLES[i] }; }
+  for (var i = 0; i < QR_ROLES.length; i++) {
+    var r = findQrRow_(QR_ROLES[i]);
+    if (r && String(r.token).trim() === cand) {
+      var lv = QR_ROLES[i] === 'enqueteur_hopital' ? 'hopital' : QR_ROLES[i] === 'enqueteur' ? 'zone' : '';
+      return { ok: true, role: QR_ROLES[i], level: lv, label: lv === 'hopital' ? 'Tous les hôpitaux' : lv === 'zone' ? 'Toutes les zones sanitaires' : '' };
+    }
+  }
+  var rows = accessCodesRows_();
+  for (var j = 0; j < rows.length; j++) {
+    if (rows[j].code === cand && rows[j].active) return { ok: true, role: rows[j].level === 'hopital' ? 'enqueteur_hopital' : 'enqueteur', level: rows[j].level, label: rows[j].name };
+  }
   return { ok: false, error: "Ce code ne correspond à aucune cible active." };
+}
+
+/* ---------- Codes d'accès par zone sanitaire / par hôpital ---------- */
+var CODES_SHEET_NAME = 'CodesAcces', CODES_HEADERS = ['Niveau', 'Nom', 'Code', 'GénéréLe', 'Actif'];
+function codesSheet_() { return getOrCreateSheet_(CODES_SHEET_NAME, CODES_HEADERS); }
+function accessCodesRows_() {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CODES_SHEET_NAME);
+  if (!sh) return [];
+  var v = sh.getDataRange().getValues(), out = [];
+  for (var i = 1; i < v.length; i++) if (v[i][0] && v[i][2] !== '') out.push({ row: i + 1, level: String(v[i][0]), name: String(v[i][1]), code: String(v[i][2]).trim(), active: v[i][4] !== 'NON' });
+  return out;
+}
+function levelRole_(level) { return level === 'hopital' ? 'enqueteur_hopital' : 'enqueteur'; }
+function codeEnUsage_(code, exceptRow, exceptRole) {
+  code = String(code).trim();
+  var general = QR_ROLES.some(function (r) { var q = findQrRow_(r); return r !== exceptRole && q && String(q.token).trim() === code; });
+  return general || accessCodesRows_().some(function (r) { return r.code === code && r.row !== exceptRow; });
+}
+function handleListAccessCodes(token) {
+  var c = requireAdminSession_(token); if (!c.ok) return c;
+  ensureQrRoles(); codesSheet_();
+  var items = [];
+  [['zone', 'enqueteur'], ['hopital', 'enqueteur_hopital']].forEach(function (p) {
+    var r = findQrRow_(p[1]); items.push({ level: p[0], name: '', general: true, code: String(r.token), active: true });
+  });
+  accessCodesRows_().forEach(function (r) { items.push({ level: r.level, name: r.name, general: false, code: r.code, active: r.active }); });
+  var zones = {}, sh = accountsSheet_();
+  if (sh) { var v = sh.getDataRange().getValues(); for (var i = 1; i < v.length; i++) if (v[i][4]) zones[String(v[i][4])] = 1; }
+  return { ok: true, codes: items, zones: Object.keys(zones).sort() };
+}
+/** Crée ou modifie un code. name vide = code général du niveau. code vide = code généré automatiquement. */
+function handleSaveAccessCode(token, level, name, code) {
+  var c = requireAdminSession_(token); if (!c.ok) return c;
+  if (level !== 'zone' && level !== 'hopital') return { ok: false, error: 'Niveau inconnu.' };
+  name = String(name || '').trim().slice(0, 80); code = String(code || '').trim();
+  if (code && code.length < 4) return { ok: false, error: 'Code trop court (4 caractères minimum).' };
+  if (!name) {
+    var role = levelRole_(level);
+    if (!code) code = Utilities.getUuid();
+    if (codeEnUsage_(code, 0, role)) return { ok: false, error: 'Ce code est déjà utilisé ailleurs.' };
+    setQr_(role, code); return { ok: true, code: code };
+  }
+  var ex = null;
+  accessCodesRows_().forEach(function (r) { if (r.level === level && r.name.toLowerCase() === name.toLowerCase()) ex = r; });
+  if (!code) { do { code = Utilities.getUuid().replace(/-/g, '').slice(0, 8).toUpperCase(); } while (codeEnUsage_(code, ex ? ex.row : 0, '')); }
+  else if (codeEnUsage_(code, ex ? ex.row : 0, '')) return { ok: false, error: 'Ce code est déjà utilisé ailleurs.' };
+  var sh = codesSheet_(), row = ex ? ex.row : sh.getLastRow() + 1, now = new Date().toISOString();
+  sh.getRange(row, 1, 1, 5).setNumberFormat('@').setValues([[level, ex ? ex.name : name, code, now, ex ? (ex.active ? 'OUI' : 'NON') : 'OUI']]);
+  return { ok: true, code: code };
+}
+function findSpecificCode_(level, name) {
+  var f = null; name = String(name || '').trim().toLowerCase();
+  accessCodesRows_().forEach(function (r) { if (r.level === level && r.name.toLowerCase() === name) f = r; });
+  return f;
+}
+function handleSetAccessCodeActive(token, level, name, active) {
+  var c = requireAdminSession_(token); if (!c.ok) return c;
+  var f = findSpecificCode_(level, name); if (!f) return { ok: false, error: 'Code introuvable.' };
+  codesSheet_().getRange(f.row, 5).setNumberFormat('@').setValue(active ? 'OUI' : 'NON');
+  return { ok: true };
+}
+function handleDeleteAccessCode(token, level, name) {
+  var c = requireAdminSession_(token); if (!c.ok) return c;
+  var f = findSpecificCode_(level, name); if (!f) return { ok: false, error: 'Code introuvable.' };
+  codesSheet_().deleteRow(f.row);
+  return { ok: true };
 }
 
 /* ---------- Filtrage serveur selon la portée du compte ---------- */

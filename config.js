@@ -36,10 +36,16 @@ function callApi(action, data, password) {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify({ action: action, data: data, password: password, qr: getQr() })
+  }).catch(function () {
+    throw new Error("Serveur injoignable : vérifiez la connexion Internet et le déploiement Apps Script (accès « Tout le monde »).");
   }).then(function (r) {
-    if (!r.ok) throw new Error("Réponse HTTP " + r.status);
-    return r.json();
-  }).then(function (j) {
+    if (!r.ok) throw new Error("Réponse HTTP " + r.status + " du serveur.");
+    return r.text();
+  }).then(function (t) {
+    var j;
+    try { j = JSON.parse(t); } catch (e) {
+      throw new Error("Réponse invalide : dans Apps Script, déployez en « Exécuter en tant que : Moi » et « Accès : Tout le monde », puis vérifiez API_URL dans config.js.");
+    }
     if (j && j.error === "QR_INVALID" && window.qrExit) window.qrExit();
     return j;
   });
