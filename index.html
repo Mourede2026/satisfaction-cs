@@ -8,37 +8,112 @@
 <style>
   :root{--brand:#0f4c81}
   *{box-sizing:border-box}
-  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f4f6f8;margin:0;padding:24px;color:#1f2937}
-  h1{font-size:1.3rem;color:var(--brand);margin-bottom:4px;text-align:center}
-  p.sub{color:#6b7280;margin-top:0;text-align:center}
-  h2.sec{max-width:520px;margin:28px auto 0;font-size:1rem;color:var(--brand)}
-  .targets{display:grid;gap:16px;margin:12px auto 0;max-width:520px}
-  .card{display:block;background:#fff;border-radius:16px;padding:26px 20px;text-decoration:none;color:#1f2937;box-shadow:0 1px 5px rgba(0,0,0,.08);border-left:8px solid var(--brand);text-align:center}
-  .card .emoji{font-size:2.2rem;display:block;margin-bottom:8px}
-  .card h3{margin:0 0 4px;font-size:1.15rem}
-  .card p{margin:0;color:#6b7280;font-size:.9rem}
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f4f6f8;margin:0;padding:20px;color:#1f2937}
+  .wrap{max-width:760px;margin:0 auto}
+  h1{font-size:1.3rem;color:var(--brand);margin:8px 0 4px;text-align:center}
+  p.sub{color:#6b7280;margin:0 0 16px;text-align:center}
+  .view{display:none}.view.on{display:block}
+  .targets{display:grid;gap:14px;margin:12px 0 0}
+  @media (min-width:640px){.targets{grid-template-columns:1fr 1fr}}
+  .card{display:block;background:#fff;border-radius:16px;padding:22px 18px;text-decoration:none;color:#1f2937;box-shadow:0 1px 5px rgba(0,0,0,.08);border-left:8px solid var(--brand);text-align:center;cursor:pointer;border-top:0;border-right:0;border-bottom:0;font:inherit;width:100%}
+  .card:active{transform:scale(.99)}
+  .card .emoji{font-size:2.1rem;display:block;margin-bottom:6px}
+  .card h3{margin:0 0 4px;font-size:1.1rem}
+  .card p{margin:0;color:#6b7280;font-size:.88rem}
+  .card .tag{display:inline-block;margin-top:8px;font-size:.75rem;padding:3px 10px;border-radius:999px;background:#eef3f8;color:var(--brand)}
+  .card .tag.ok{background:#e6f6ee;color:#1a7f4b}
+  .card.admin{border-left-color:#6b7280}
   .card.off{border-left-color:#c9d0d8;opacity:.6;pointer-events:none}
+  .back{display:inline-block;margin-bottom:6px;color:var(--brand);text-decoration:none;font-size:.9rem;background:none;border:0;cursor:pointer;padding:6px 0;font-family:inherit}
+  .access{background:#fff;border-radius:12px;padding:10px 14px;margin:0 0 4px;font-size:.85rem;color:#4b5563;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  .access button{background:#fff;border:1px solid var(--brand);color:var(--brand);border-radius:999px;padding:5px 12px;cursor:pointer;font-size:.8rem;font-family:inherit}
+  .access .btns{display:flex;gap:6px}
 </style>
 <script src="config.js"></script>
 <link rel="manifest" href="manifest.json"><meta name="theme-color" content="#0f4c81"><link rel="icon" href="icon-192.png">
 </head>
 <body>
-  <h1>🎯 Cible à enquêter</h1>
-  <p class="sub">Choisissez le type de personne interrogée</p>
+<div class="wrap">
 
-  <h2 class="sec">Centres de santé</h2>
-  <div class="targets">
-    <a class="card" href="FormUsagers.html"><span class="emoji">👩‍👦</span><h3>Usagers (patients)</h3><p>Questionnaire de satisfaction des usagers des centres de santé</p></a>
-    <a class="card" href="FormPersonnels.html"><span class="emoji">👩‍⚕️</span><h3>Personnel soignant</h3><p>Questionnaire de satisfaction du personnel des centres de santé</p></a>
-    <a class="card" href="FormCogecs.html"><span class="emoji">👨‍👩‍👧‍👦</span><h3>Membre COGECS</h3><p>Questionnaire de satisfaction des membres du COGECS</p></a>
-  </div>
+  <!-- Accueil : collecte ou administration -->
+  <section class="view" id="v-home">
+    <h1>📋 Enquêtes de satisfaction</h1>
+    <p class="sub">Que voulez-vous faire ?</p>
+    <div class="targets">
+      <a class="card" href="#niveau"><span class="emoji">📝</span><h3>Collecter des données</h3><p>Enquêter ou soumettre un questionnaire</p></a>
+      <a class="card admin" href="AdminQR.html"><span class="emoji">⚙️</span><h3>Administration</h3><p>Codes d'accès, tableau de bord</p></a>
+    </div>
+  </section>
 
-  <h2 class="sec">Hôpitaux</h2>
-  <div class="targets">
-    <div class="card off"><span class="emoji">🏥</span><h3>Usagers de l'hôpital</h3><p>Bientôt disponible</p></div>
-    <div class="card off"><span class="emoji">🩺</span><h3>Personnel de l'hôpital</h3><p>Bientôt disponible</p></div>
-    <div class="card off"><span class="emoji">🏘️</span><h3>Communauté</h3><p>Bientôt disponible</p></div>
-    <div class="card off"><span class="emoji">🤝</span><h3>Acteurs communautaires</h3><p>Bientôt disponible</p></div>
-  </div>
+  <!-- Niveau de collecte -->
+  <section class="view" id="v-niveau">
+    <a class="back" href="#">&larr; Accueil</a>
+    <h1>Niveau de collecte</h1>
+    <p class="sub">Où se fait l'enquête ?</p>
+    <div class="targets">
+      <a class="card" href="#zone"><span class="emoji">🏘️</span><h3>Zone sanitaire</h3><p>Centres de santé : usagers, personnel, COGECS</p></a>
+      <a class="card" href="#hopital"><span class="emoji">🏥</span><h3>Hôpital</h3><p>Usagers, personnel, communauté, acteurs communautaires</p></a>
+    </div>
+  </section>
+
+  <!-- Cibles du niveau choisi -->
+  <section class="view" id="v-cibles">
+    <a class="back" href="#niveau">&larr; Niveau de collecte</a>
+    <h1 id="cTitle"></h1>
+    <p class="sub" id="cSub"></p>
+    <div class="access" id="cAccess"></div>
+    <div class="targets" id="cCards"></div>
+  </section>
+
+</div>
+<script>
+  // href: null = formulaire pas encore disponible. code: true = code enquêteur requis (le personnel n'en a pas besoin).
+  var LEVELS = {
+    zone: {title: '🏘️ Zone sanitaire', sub: 'Centres de santé', cards: [
+      {e: '👩‍👦', t: 'Usagers (patients)', d: 'Satisfaction des usagers des centres de santé', href: 'FormUsagers.html', code: true},
+      {e: '👩‍⚕️', t: 'Personnel soignant', d: 'Satisfaction du personnel des centres de santé', href: 'FormPersonnels.html', code: false},
+      {e: '👨‍👩‍👧‍👦', t: 'Membre COGECS', d: 'Satisfaction des membres du COGECS', href: 'FormCogecs.html', code: true}
+    ]},
+    hopital: {title: '🏥 Hôpital', sub: "Hôpital de zone", cards: [
+      {e: '🏥', t: "Usagers de l'hôpital", d: 'Satisfaction des usagers', href: null, code: true},
+      {e: '🩺', t: "Personnel de l'hôpital", d: 'Satisfaction du personnel', href: null, code: false},
+      {e: '🏘️', t: 'Communauté', d: 'Perception de la communauté', href: null, code: true},
+      {e: '🤝', t: 'Acteurs communautaires', d: 'Satisfaction des acteurs communautaires', href: null, code: true}
+    ]}
+  };
+  function $(id){return document.getElementById(id);}
+  function el(tag, cls, html){var n=document.createElement(tag); if(cls)n.className=cls; if(html!==undefined)n.innerHTML=html; return n;}
+
+  function renderCibles(level){
+    var L = LEVELS[level], has = !!getQr(level);
+    $('cTitle').textContent = L.title; $('cSub').textContent = L.sub;
+    var acc = $('cAccess'); acc.innerHTML = '';
+    var left = el('span', '', has ? '🔑 Code enquêteur actif' + (getQrLabel(level) ? ' — <b></b>' : '') : '🔑 Aucun code enquêteur saisi');
+    if (has && getQrLabel(level)) left.querySelector('b').textContent = getQrLabel(level);
+    var btns = el('span', 'btns');
+    var b1 = el('button', '', has ? 'Changer de code' : 'Saisir le code');
+    b1.onclick = function(){ location.href = 'Acces.html?level=' + level + '&next=' + encodeURIComponent('index.html#' + level); };
+    btns.appendChild(b1);
+    if (has) { var b2 = el('button', '', 'Retirer'); b2.onclick = function(){ clearQr(level); renderCibles(level); }; btns.appendChild(b2); }
+    acc.appendChild(left); acc.appendChild(btns);
+    var box = $('cCards'); box.innerHTML = '';
+    L.cards.forEach(function(c){
+      var a = el(c.href ? 'a' : 'div', 'card' + (c.href ? '' : ' off'));
+      if (c.href) a.href = c.href;
+      var tag = !c.href ? 'Bientôt disponible' : (!c.code ? '✅ Accès libre, sans code' : (has ? '✅ Code saisi' : '🔑 Code requis'));
+      a.innerHTML = '<span class="emoji">' + c.e + '</span><h3>' + c.t + '</h3><p>' + c.d + '</p>' + (c.href ? '<span class="tag' + ((!c.code || has) ? ' ok' : '') + '">' + tag + '</span>' : '<span class="tag">' + tag + '</span>');
+      box.appendChild(a);
+    });
+  }
+  function route(){
+    var h = (location.hash || '').replace('#', '');
+    ['home', 'niveau', 'cibles'].forEach(function(v){ $('v-' + v).classList.remove('on'); });
+    if (h === 'niveau') $('v-niveau').classList.add('on');
+    else if (LEVELS[h]) { renderCibles(h); $('v-cibles').classList.add('on'); }
+    else $('v-home').classList.add('on');
+    window.scrollTo(0, 0);
+  }
+  window.addEventListener('hashchange', route); route();
+</script>
 </body>
 </html>

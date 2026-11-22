@@ -10,27 +10,34 @@
  input,button{width:100%;padding:12px;border-radius:10px;font-size:1rem;margin-top:10px;box-sizing:border-box}
  input{border:1px solid #dfe4ea}
  button{border:0;background:#0f4c81;color:#fff;font-weight:600}
+ a.back{display:block;text-align:center;margin-top:16px;color:#0f4c81;font-size:.9rem;text-decoration:none}
  #msg{margin-top:12px;font-size:.9rem}.err{color:#c0392b}.ok{color:#1a9e5c}
 </style><link rel="manifest" href="manifest.json"><meta name="theme-color" content="#0f4c81"><link rel="icon" href="icon-192.png">
 </head><body>
 <main>
- <h1>Accès enquêteur</h1>
- <p id="intro">Scannez le code QR remis par l'administrateur avec l'appareil photo du téléphone, ou saisissez le code ci-dessous.</p>
- <input id="code" placeholder="Code d'accès" autocomplete="off">
+ <h1 id="title">Accès enquêteur</h1>
+ <p id="intro">Scannez le code QR remis par l'administrateur avec l'appareil photo du téléphone, ou saisissez le code ci-dessous. Le code n'est demandé qu'une fois.</p>
+ <input id="code" placeholder="Code d'accès" autocomplete="off" autocapitalize="characters" onkeydown="if(event.key==='Enter')go(this.value)">
  <button onclick="go(document.getElementById('code').value)">Entrer</button>
  <div id="msg"></div>
+ <a class="back" id="backLink" href="index.html">&larr; Retour à l'accueil</a>
 </main>
 <script src="config.js"></script>
 <script>
  var msg=document.getElementById('msg'), p=new URLSearchParams(location.search);
- if(p.get('expired')){msg.className='err';msg.textContent="Le code d'accès a changé. Scannez le nouveau code QR. Vos réponses en attente sont conservées.";}
+ var wantLevel=p.get('level'); if(wantLevel!=='zone'&&wantLevel!=='hopital')wantLevel='';
+ var next=p.get('next')||''; if(!/^[A-Za-z0-9_\-]+\.html(#[a-z]+)?$/.test(next))next='';
+ if(wantLevel){document.getElementById('title').textContent='Accès enquêteur — '+(wantLevel==='hopital'?'Hôpital':'Zone sanitaire');document.getElementById('backLink').href='index.html#'+wantLevel;}
+ if(p.get('expired')){msg.className='err';msg.textContent="Le code d'accès a changé ou a été désactivé. Saisissez ou scannez le nouveau code. Vos réponses en attente sont conservées.";}
  function go(code){
    code=(code||'').trim(); if(!code)return;
    msg.className='';msg.textContent='Vérification…';
    callApi('matchQrCode',{text:code}).then(function(r){
-     if(!r||!r.ok||(r.role!=='enqueteur'&&r.role!=='enqueteur_hopital')){msg.className='err';msg.textContent="Code invalide ou remplacé. Demandez le code actuel à l'administrateur.";return;}
-     localStorage.setItem(QR_KEY,code); localStorage.setItem('qr_role',r.role);
-     location.replace('index.html');
+     if(!r||!r.ok||(r.role!=='enqueteur'&&r.role!=='enqueteur_hopital')){msg.className='err';msg.textContent="Code invalide, remplacé ou désactivé. Demandez le code actuel à l'administrateur.";return;}
+     var level=r.level||(r.role==='enqueteur_hopital'?'hopital':'zone');
+     if(wantLevel&&level!==wantLevel){msg.className='err';msg.textContent=wantLevel==='hopital'?"Ce code est un code de zone sanitaire. Saisissez le code de l'hôpital.":"Ce code est un code d'hôpital. Saisissez le code de la zone sanitaire.";return;}
+     setQr(level,code,r.label||'');
+     location.replace(next||('index.html#'+level));
    }).catch(function(){msg.className='err';msg.textContent='Erreur de connexion. Réessayez avec du réseau.';});
  }
  if(p.get('code')) go(p.get('code'));

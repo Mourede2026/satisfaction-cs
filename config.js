@@ -1,6 +1,31 @@
-// Configuration + accès par code QR (session enquêteur)
+// Configuration + accès enquêteur par code (un code par niveau : zone sanitaire / hôpital)
 const API_URL = "https://script.google.com/macros/s/AKfycbwjB6aW_ksTbTJgf2n7-VXh7d2FPuTVQov8m6ZijLN5OPPSj4kEFqU1w08HowBs-GcWAw/exec";
-const QR_KEY = "qr_token";
+const QR_KEYS = { zone: "qr_token_zone", hopital: "qr_token_hopital" };
+const QR_KEY = QR_KEYS.zone; // compatibilité
+
+// Migration de l'ancien code unique (avant la séparation zone / hôpital)
+(function () {
+  try {
+    var t = localStorage.getItem("qr_token");
+    if (t) {
+      var lv = localStorage.getItem("qr_role") === "enqueteur_hopital" ? "hopital" : "zone";
+      if (!localStorage.getItem(QR_KEYS[lv])) localStorage.setItem(QR_KEYS[lv], t);
+      localStorage.removeItem("qr_token"); localStorage.removeItem("qr_role");
+    }
+  } catch (e) {}
+})();
+
+// Niveau de la page courante : les formulaires hôpital ont "Hopital" dans leur nom
+function pageLevel() { return /Hopital/i.test(location.pathname) ? "hopital" : "zone"; }
+function getQr(level) { return localStorage.getItem(QR_KEYS[level || pageLevel()]) || ""; }
+function getQrLabel(level) { return localStorage.getItem(QR_KEYS[level || pageLevel()] + "_label") || ""; }
+function setQr(level, token, label) {
+  localStorage.setItem(QR_KEYS[level], token);
+  localStorage.setItem(QR_KEYS[level] + "_label", label || "");
+}
+function clearQr(level) {
+  localStorage.removeItem(QR_KEYS[level]); localStorage.removeItem(QR_KEYS[level] + "_label");
+}
 
 function callApi(action, data, password) {
   if (!API_URL || API_URL.indexOf("COLLEZ_ICI") !== -1) {
@@ -10,7 +35,7 @@ function callApi(action, data, password) {
   return fetch(API_URL, {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify({ action: action, data: data, password: password, qr: localStorage.getItem(QR_KEY) || "" })
+    body: JSON.stringify({ action: action, data: data, password: password, qr: getQr() })
   }).then(function (r) {
     if (!r.ok) throw new Error("Réponse HTTP " + r.status);
     return r.json();
@@ -20,18 +45,18 @@ function callApi(action, data, password) {
   });
 }
 
-// Les formulaires exigent un code scanné ; il est revérifié toutes les 60 s
-// et à chaque envoi : si l'administrateur change le code, l'accès est coupé.
+// Les formulaires d'enquête (hors Personnel, en accès libre) exigent le code du niveau.
+// Il est saisi une seule fois, revérifié toutes les 60 s et à chaque envoi :
+// si l'administrateur le change ou le désactive, l'accès est coupé (les réponses en attente sont conservées).
 (function () {
-  if (!/Form(?!Personnels)[A-Za-z]*\.html$/.test(location.pathname)) return; // le formulaire Personnel soignant reste libre d'accès
-  window.qrExit = function () {
-    localStorage.removeItem(QR_KEY);
-    location.replace("Acces.html?expired=1");
-  };
-  if (!localStorage.getItem(QR_KEY)) { location.replace("Acces.html"); return; }
+  if (!/Form(?!Personnel)[A-Za-z]*\.html$/.test(location.pathname)) return;
+  var level = pageLevel(), here = location.pathname.split("/").pop();
+  var to = function (extra) { return "Acces.html?level=" + level + "&next=" + encodeURIComponent(here) + (extra || ""); };
+  window.qrExit = function () { clearQr(level); location.replace(to("&expired=1")); };
+  if (!getQr(level)) { location.replace(to()); return; }
   function verify() {
     if (!navigator.onLine) return;
-    callApi("checkQr", { token: localStorage.getItem(QR_KEY) }).then(function (r) {
+    callApi("checkQr", { token: getQr(level), level: level }).then(function (r) {
       if (r && r.ok && !r.valid) window.qrExit();
     }).catch(function () {});
   }

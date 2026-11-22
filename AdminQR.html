@@ -1,50 +1,138 @@
 <!DOCTYPE html>
 <html lang="fr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Codes QR enquêteurs</title>
+<title>Administration - Codes d'accès</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
- body{font-family:system-ui,sans-serif;background:#f4f6f8;margin:0;padding:20px;color:#1f2937}
- .card{max-width:420px;margin:16px auto;background:#fff;border-radius:14px;padding:20px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.08)}
- h1{font-size:1.2rem;color:#0f4c81;text-align:center} h2{font-size:1rem;margin:0 0 12px}
- input,button{padding:12px;border-radius:10px;font-size:1rem;margin-top:8px;box-sizing:border-box}
- input{width:100%;border:1px solid #dfe4ea} button{border:0;background:#0f4c81;color:#fff;font-weight:600;cursor:pointer}
- button.alt{background:#fff;color:#0f4c81;border:1px solid #0f4c81} .qr{display:flex;justify-content:center;margin:12px 0}
- small{display:block;word-break:break-all;color:#6b7280} #err{color:#c0392b;text-align:center}
- @media print{#login,.btns{display:none}}
+ :root{--brand:#0f4c81}
+ *{box-sizing:border-box}
+ body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f4f6f8;margin:0;color:#1f2937}
+ header{background:var(--brand);color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+ header h1{margin:0;font-size:1.05rem}
+ header nav a,header nav button{color:#cfe3f7;text-decoration:none;font-size:.85rem;margin-left:12px;background:none;border:0;cursor:pointer;font-family:inherit;padding:0}
+ main{max-width:900px;margin:0 auto;padding:16px}
+ .box{background:#fff;border-radius:14px;padding:18px;margin:0 0 14px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+ #login{max-width:360px;margin:40px auto}
+ h2{font-size:1rem;color:var(--brand);margin:20px 0 4px} h3{font-size:.95rem;margin:0}
+ .hint{color:#6b7280;font-size:.82rem;margin:0 0 10px}
+ input,button,select{padding:11px 12px;border-radius:10px;font-size:1rem;font-family:inherit}
+ input{width:100%;border:1px solid #dfe4ea;margin-top:8px}
+ button.pri{border:0;background:var(--brand);color:#fff;font-weight:600;cursor:pointer}
+ button.alt{background:#fff;color:var(--brand);border:1px solid var(--brand);cursor:pointer;font-size:.85rem;padding:8px 12px}
+ button.dng{background:#fff;color:#c0392b;border:1px solid #c0392b;cursor:pointer;font-size:.85rem;padding:8px 12px}
+ .grid{display:grid;gap:12px}
+ @media (min-width:700px){.grid{grid-template-columns:1fr 1fr}}
+ .code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:1.25rem;letter-spacing:.04em;word-break:break-all;background:#eef3f8;border-radius:8px;padding:8px 10px;margin:8px 0}
+ .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+ .badge{font-size:.72rem;padding:2px 8px;border-radius:999px;background:#eef3f8;color:var(--brand);margin-left:6px}
+ .badge.off{background:#fdecea;color:#c0392b}
+ .qr{display:flex;justify-content:center;margin:10px 0}
+ details summary{cursor:pointer;color:var(--brand);font-size:.85rem;margin-top:8px}
+ #err{color:#c0392b;text-align:center;min-height:1.2em;font-size:.9rem}
+ #toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#1f2937;color:#fff;padding:10px 16px;border-radius:999px;font-size:.85rem;display:none}
+ .add{display:grid;gap:8px}
+ @media (min-width:700px){.add{grid-template-columns:2fr 1fr auto;align-items:end}.add input{margin-top:0}}
+ label{font-size:.78rem;color:#6b7280;display:block}
+ @media print{header,#login,.row,.add,.addBox,details summary{display:none}.box{box-shadow:none;border:1px solid #ccc;break-inside:avoid}}
 </style><link rel="manifest" href="manifest.json"><meta name="theme-color" content="#0f4c81"><link rel="icon" href="icon-192.png">
 </head><body>
-<h1>Codes QR d'accès des enquêteurs</h1>
-<div class="card" id="login">
- <input id="u" placeholder="Identifiant administrateur">
- <input id="p" type="password" placeholder="Mot de passe" onkeydown="if(event.key==='Enter')login()">
- <button onclick="login()">Se connecter</button>
-</div>
-<div id="err"></div><div id="list"></div>
+<header>
+ <h1>⚙️ Administration</h1>
+ <nav><a href="index.html">Accueil</a><a href="AdminDashboard.html">📊 Tableau de bord</a><button id="logout" style="display:none" onclick="location.reload()">Déconnexion</button></nav>
+</header>
+<main>
+ <div class="box" id="login">
+  <h3>Connexion administrateur</h3>
+  <input id="u" placeholder="Identifiant" autocomplete="username">
+  <input id="p" type="password" placeholder="Mot de passe" autocomplete="current-password" onkeydown="if(event.key==='Enter')login()">
+  <button class="pri" style="width:100%;margin-top:12px" onclick="login()">Se connecter</button>
+ </div>
+ <div id="err"></div>
+ <div id="panel" style="display:none">
+  <p class="hint">Un code sert à l'enquêteur pour enregistrer des données. Il le saisit (ou le scanne) <b>une seule fois</b>, puis il reste valable dans son niveau de travail. Le personnel n'a jamais besoin de code. Le <b>code général</b> marche pour tout le niveau ; un <b>code spécifique</b> est réservé à une zone sanitaire ou à un hôpital précis.</p>
+  <h2>🏘️ Zones sanitaires</h2><div class="grid" id="list-zone"></div>
+  <div class="box addBox"><h3>Ajouter un code pour une zone sanitaire</h3>
+   <div class="add"><div><label>Nom de la zone sanitaire</label><input id="n-zone" list="dl-zone" placeholder="Ex. Djidja-Abomey-Agbangnizoun"></div>
+   <div><label>Code (vide = généré)</label><input id="c-zone" placeholder="Optionnel" autocapitalize="characters"></div>
+   <button class="pri" onclick="add('zone')">Créer</button></div></div>
+  <datalist id="dl-zone"></datalist>
+  <h2>🏥 Hôpitaux</h2><div class="grid" id="list-hopital"></div>
+  <div class="box addBox"><h3>Ajouter un code pour un hôpital</h3>
+   <div class="add"><div><label>Nom de l'hôpital</label><input id="n-hopital" placeholder="Ex. Hôpital de zone de Zinvié"></div>
+   <div><label>Code (vide = généré)</label><input id="c-hopital" placeholder="Optionnel" autocapitalize="characters"></div>
+   <button class="pri" onclick="add('hopital')">Créer</button></div></div>
+ </div>
+</main>
+<div id="toast"></div>
 <script src="config.js"></script>
 <script>
- var tok='', ROLES=[['enqueteur','Enquêteurs — zones sanitaires'],['enqueteur_hopital','Enquêteurs — hôpitaux']];
+ var tok='', items=[];
+ function $(i){return document.getElementById(i);}
+ function err(t){$('err').textContent=t||'';}
+ function toast(t){var x=$('toast');x.textContent=t;x.style.display='block';setTimeout(function(){x.style.display='none';},2200);}
+ function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
  function login(){
-  callApi('accountLogin',{username:document.getElementById('u').value.trim()},document.getElementById('p').value).then(function(r){
+  err('Connexion…');
+  callApi('accountLogin',{username:$('u').value.trim()},$('p').value).then(function(r){
    if(!r||!r.ok){err(r&&r.error||'Échec de connexion');return;}
    if(r.account.level!=='admin'){err("Réservé au compte administrateur.");return;}
-   tok=r.token; document.getElementById('login').style.display='none'; err(''); ROLES.forEach(draw);
-  }).catch(function(){err('Erreur de connexion.');});
+   tok=r.token;err('');$('login').style.display='none';$('panel').style.display='block';$('logout').style.display='inline';load();
+  }).catch(function(){err('Erreur de connexion. Vérifiez le réseau.');});
  }
- function err(t){document.getElementById('err').textContent=t;}
- function draw(role){
-  var id='c_'+role, box=document.getElementById(id);
-  if(!box){box=document.createElement('div');box.className='card';box.id=id;document.getElementById('list').appendChild(box);}
-  callApi('getQrToken',{token:tok,role:role[0]}).then(function(r){
-   if(!r.ok){err(r.error);return;}
-   var url=new URL('Acces.html',location.href).href+'?code='+encodeURIComponent(r.token);
-   box.innerHTML='<h2>'+role[1]+'</h2><div class="qr" id="q_'+role[0]+'"></div><small>'+r.token+'</small>'+
-    '<div class="btns"><button onclick="window.print()">Imprimer</button> <button class="alt" onclick="renew(\''+role[0]+'\')">Changer le code</button></div>';
-   new QRCode(document.getElementById('q_'+role[0]),{text:url,width:220,height:220});
+ function api(action,data){data=data||{};data.token=tok;return callApi(action,data).then(function(r){if(!r||!r.ok){throw new Error(r&&r.error||'Erreur');}return r;});}
+ function load(){
+  api('listAccessCodes').then(function(r){
+   items=r.codes;
+   $('dl-zone').innerHTML=(r.zones||[]).map(function(z){return '<option value="'+esc(z)+'">';}).join('');
+   draw();
+  }).catch(function(e){err(e.message);});
+ }
+ function linkOf(code){return new URL('Acces.html',location.href).href+'?code='+encodeURIComponent(code);}
+ function draw(){
+  ['zone','hopital'].forEach(function(lv){
+   var box=$('list-'+lv);box.innerHTML='';
+   items.forEach(function(it,i){
+    if(it.level!==lv)return;
+    var d=document.createElement('div');d.className='box';d.style.margin='0';
+    var title=it.general?(lv==='zone'?'Code général — toutes les zones':'Code général — tous les hôpitaux'):it.name;
+    d.innerHTML='<h3>'+esc(title)+(it.general?'':(it.active?'':'<span class="badge off">Désactivé</span>'))+'</h3>'+
+     '<div class="code">'+esc(it.code)+'</div>'+
+     '<details><summary>Afficher le code QR</summary><div class="qr" id="qr'+i+'"></div></details>'+
+     '<div class="row"><button class="alt" data-a="share" data-i="'+i+'">Partager</button>'+
+     '<button class="alt" data-a="print" data-i="'+i+'">Imprimer</button>'+
+     '<button class="alt" data-a="renew" data-i="'+i+'">Nouveau code</button>'+
+     '<button class="alt" data-a="edit" data-i="'+i+'">Choisir le code</button>'+
+     (it.general?'':'<button class="alt" data-a="toggle" data-i="'+i+'">'+(it.active?'Désactiver':'Activer')+'</button><button class="dng" data-a="del" data-i="'+i+'">Supprimer</button>')+'</div>';
+    box.appendChild(d);
+    d.querySelector('details').addEventListener('toggle',function(ev){
+     var q=$('qr'+i);if(ev.target.open&&!q.firstChild)new QRCode(q,{text:linkOf(it.code),width:200,height:200});
+    });
+   });
   });
  }
- function renew(role){
-  if(!confirm("Changer le code ? Tous les enquêteurs connectés avec l'ancien code perdront l'accès.")) return;
-  callApi('refreshQrToken',{token:tok,role:role}).then(function(r){ if(!r.ok){err(r.error);return;} ROLES.forEach(function(x){if(x[0]===role)draw(x);}); });
+ document.addEventListener('click',function(ev){
+  var b=ev.target.closest('button[data-a]');if(!b)return;
+  var it=items[+b.dataset.i],a=b.dataset.a;
+  var who=it.general?'le code général':'le code de « '+it.name+' »';
+  if(a==='share'){
+   var title="Code d'accès enquêteur"+(it.name?' — '+it.name:'');
+   var txt=title+'\nCode : '+it.code+'\nLien : '+linkOf(it.code);
+   if(navigator.share)navigator.share({title:title,text:txt}).catch(function(){});
+   else if(navigator.clipboard){navigator.clipboard.writeText(txt).then(function(){toast('Copié');});}
+   else prompt('Copiez :',txt);
+  }
+  else if(a==='print'){document.querySelectorAll('details').forEach(function(x){x.open=false;});b.closest('.box').querySelector('details').open=true;setTimeout(function(){window.print();},300);}
+  else if(a==='renew'){if(!confirm('Générer un nouveau code pour '+who+' ? Les enquêteurs qui utilisent l\'ancien code devront saisir le nouveau.'))return;
+   api('saveAccessCode',{level:it.level,name:it.name}).then(function(){toast('Nouveau code créé');load();}).catch(function(e){err(e.message);});}
+  else if(a==='edit'){var c=prompt('Nouveau code pour '+who+' (4 caractères minimum) :',it.code);if(c===null)return;
+   api('saveAccessCode',{level:it.level,name:it.name,code:c}).then(function(){toast('Code enregistré');load();}).catch(function(e){err(e.message);});}
+  else if(a==='toggle'){api('setAccessCodeActive',{level:it.level,name:it.name,active:!it.active}).then(function(){load();}).catch(function(e){err(e.message);});}
+  else if(a==='del'){if(!confirm('Supprimer '+who+' ? Les enquêteurs qui l\'utilisent perdront l\'accès.'))return;
+   api('deleteAccessCode',{level:it.level,name:it.name}).then(function(){toast('Supprimé');load();}).catch(function(e){err(e.message);});}
+ });
+ function add(lv){
+  var n=$('n-'+lv).value.trim(),c=$('c-'+lv).value.trim();
+  if(!n){err('Indiquez le nom.');return;}
+  err('');api('saveAccessCode',{level:lv,name:n,code:c}).then(function(){$('n-'+lv).value='';$('c-'+lv).value='';toast('Code créé');load();}).catch(function(e){err(e.message);});
  }
 </script></body></html>
