@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codes QR enquêteurs</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+ body{font-family:system-ui,sans-serif;background:#f4f6f8;margin:0;padding:20px;color:#1f2937}
+ .card{max-width:420px;margin:16px auto;background:#fff;border-radius:14px;padding:20px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+ h1{font-size:1.2rem;color:#0f4c81;text-align:center} h2{font-size:1rem;margin:0 0 12px}
+ input,button{padding:12px;border-radius:10px;font-size:1rem;margin-top:8px;box-sizing:border-box}
+ input{width:100%;border:1px solid #dfe4ea} button{border:0;background:#0f4c81;color:#fff;font-weight:600;cursor:pointer}
+ button.alt{background:#fff;color:#0f4c81;border:1px solid #0f4c81} .qr{display:flex;justify-content:center;margin:12px 0}
+ small{display:block;word-break:break-all;color:#6b7280} #err{color:#c0392b;text-align:center}
+ @media print{#login,.btns{display:none}}
+</style><link rel="manifest" href="manifest.json"><meta name="theme-color" content="#0f4c81"><link rel="icon" href="icon-192.png">
+</head><body>
+<h1>Codes QR d'accès des enquêteurs</h1>
+<div class="card" id="login">
+ <input id="u" placeholder="Identifiant administrateur">
+ <input id="p" type="password" placeholder="Mot de passe" onkeydown="if(event.key==='Enter')login()">
+ <button onclick="login()">Se connecter</button>
+</div>
+<div id="err"></div><div id="list"></div>
+<script src="config.js"></script>
+<script>
+ var tok='', ROLES=[['enqueteur','Enquêteurs — zones sanitaires'],['enqueteur_hopital','Enquêteurs — hôpitaux']];
+ function login(){
+  callApi('accountLogin',{username:document.getElementById('u').value.trim()},document.getElementById('p').value).then(function(r){
+   if(!r||!r.ok){err(r&&r.error||'Échec de connexion');return;}
+   if(r.account.level!=='admin'){err("Réservé au compte administrateur.");return;}
+   tok=r.token; document.getElementById('login').style.display='none'; err(''); ROLES.forEach(draw);
+  }).catch(function(){err('Erreur de connexion.');});
+ }
+ function err(t){document.getElementById('err').textContent=t;}
+ function draw(role){
+  var id='c_'+role, box=document.getElementById(id);
+  if(!box){box=document.createElement('div');box.className='card';box.id=id;document.getElementById('list').appendChild(box);}
+  callApi('getQrToken',{token:tok,role:role[0]}).then(function(r){
+   if(!r.ok){err(r.error);return;}
+   var url=new URL('Acces.html',location.href).href+'?code='+encodeURIComponent(r.token);
+   box.innerHTML='<h2>'+role[1]+'</h2><div class="qr" id="q_'+role[0]+'"></div><small>'+r.token+'</small>'+
+    '<div class="btns"><button onclick="window.print()">Imprimer</button> <button class="alt" onclick="renew(\''+role[0]+'\')">Changer le code</button></div>';
+   new QRCode(document.getElementById('q_'+role[0]),{text:url,width:220,height:220});
+  });
+ }
+ function renew(role){
+  if(!confirm("Changer le code ? Tous les enquêteurs connectés avec l'ancien code perdront l'accès.")) return;
+  callApi('refreshQrToken',{token:tok,role:role}).then(function(r){ if(!r.ok){err(r.error);return;} ROLES.forEach(function(x){if(x[0]===role)draw(x);}); });
+ }
+</script></body></html>

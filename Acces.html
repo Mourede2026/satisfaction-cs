@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Accès enquêteur</title>
+<style>
+ body{font-family:system-ui,sans-serif;background:#f4f6f8;margin:0;padding:24px;color:#1f2937}
+ main{max-width:420px;margin:40px auto;background:#fff;border-radius:14px;padding:24px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+ h1{font-size:1.2rem;color:#0f4c81;margin:0 0 8px}
+ p{color:#6b7280;font-size:.9rem}
+ input,button{width:100%;padding:12px;border-radius:10px;font-size:1rem;margin-top:10px;box-sizing:border-box}
+ input{border:1px solid #dfe4ea}
+ button{border:0;background:#0f4c81;color:#fff;font-weight:600}
+ #msg{margin-top:12px;font-size:.9rem}.err{color:#c0392b}.ok{color:#1a9e5c}
+</style><link rel="manifest" href="manifest.json"><meta name="theme-color" content="#0f4c81"><link rel="icon" href="icon-192.png">
+</head><body>
+<main>
+ <h1>Accès enquêteur</h1>
+ <p id="intro">Scannez le code QR remis par l'administrateur avec l'appareil photo du téléphone, ou saisissez le code ci-dessous.</p>
+ <input id="code" placeholder="Code d'accès" autocomplete="off">
+ <button onclick="go(document.getElementById('code').value)">Entrer</button>
+ <div id="msg"></div>
+</main>
+<script src="config.js"></script>
+<script>
+ var msg=document.getElementById('msg'), p=new URLSearchParams(location.search);
+ if(p.get('expired')){msg.className='err';msg.textContent="Le code d'accès a changé. Scannez le nouveau code QR. Vos réponses en attente sont conservées.";}
+ function go(code){
+   code=(code||'').trim(); if(!code)return;
+   msg.className='';msg.textContent='Vérification…';
+   callApi('matchQrCode',{text:code}).then(function(r){
+     if(!r||!r.ok||(r.role!=='enqueteur'&&r.role!=='enqueteur_hopital')){msg.className='err';msg.textContent="Code invalide ou remplacé. Demandez le code actuel à l'administrateur.";return;}
+     localStorage.setItem(QR_KEY,code); localStorage.setItem('qr_role',r.role);
+     location.replace('Index.html');
+   }).catch(function(){msg.className='err';msg.textContent='Erreur de connexion. Réessayez avec du réseau.';});
+ }
+ if(p.get('code')) go(p.get('code'));
+</script></body></html>

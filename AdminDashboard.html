@@ -55,6 +55,7 @@
   .catCanvasWrap canvas{max-height:none}
 </style>
 <script src="config.js"></script>
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#0f4c81"><link rel="icon" href="icon-192.png">
 </head>
 <body>
 <header>
@@ -64,6 +65,7 @@
 
 <div id="loginBox">
   <h2>🔒 Accès administrateur</h2>
+  <input type="text" id="userInput" placeholder="Identifiant" style="margin-bottom:8px">
   <input type="password" id="pwdInput" placeholder="Mot de passe" onkeydown="if(event.key==='Enter')login()">
   <button onclick="login()">Se connecter</button>
   <div id="loginError"></div>
@@ -171,16 +173,17 @@
 </main>
 
 <script>
-let pwd = '';
+let tok = '';
 let charts = {};
 let autoTimer = null;
 
 function login(){
-  pwd = document.getElementById('pwdInput').value;
+  var pwdIn = document.getElementById('pwdInput').value;
   document.getElementById('loginError').textContent = 'Connexion...';
-  callApi('checkAdminPassword', null, pwd)
+  callApi('accountLogin', {username: document.getElementById('userInput').value.trim()}, pwdIn)
     .then(res=>{
-      if (!res || !res.valid){ document.getElementById('loginError').textContent = 'Mot de passe incorrect.'; return; }
+      if (!res || !res.ok){ document.getElementById('loginError').textContent = (res && res.error) || 'Identifiant ou mot de passe incorrect.'; return; }
+      tok = res.token;
       document.getElementById('loginBox').style.display = 'none';
       document.getElementById('dashRoot').style.display = 'block';
       loadData(true);
@@ -197,7 +200,7 @@ function showPanel(id, el){
 }
 
 function loadData(first){
-  callApi('getDashboardData', null, pwd)
+  callApi('getDashboardData', {token: tok}, '')
     .then(renderData)
     .catch(()=>{ document.getElementById('lastUpdate').textContent = 'Erreur lors du chargement.'; });
 }

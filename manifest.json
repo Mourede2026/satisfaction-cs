@@ -1,14 +1,16 @@
 {
-  "name": "MOUREDE & ASSOCIES - Enquête de Satisfaction des Usagers",
+  "name": "MOUREDE & ASSOCIES - Enquête de Satisfaction",
   "short_name": "MOUREDE",
   "description": "Enquête de satisfaction des usagers - fonctionne hors-ligne",
-  "start_url": "./index.html",
+  "id": "./Index.html",
+  "start_url": "./Index.html",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#EEF3F2",
-  "theme_color": "#0F5C56",
+  "theme_color": "#0f4c81",
   "orientation": "portrait",
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
   ]
 }
