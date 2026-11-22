@@ -52,7 +52,7 @@
     <p class="sub">Où se fait l'enquête ?</p>
     <div class="targets">
       <a class="card" href="#zone"><span class="emoji">🏘️</span><h3>Zone sanitaire</h3><p>Centres de santé : usagers, personnel, COGECS</p></a>
-      <a class="card" href="#hopital"><span class="emoji">🏥</span><h3>Hôpital</h3><p>Usagers, personnel, communauté, acteurs communautaires</p></a>
+      <a class="card" href="#hopital"><span class="emoji">🏥</span><h3>Hôpital</h3><p>Usagers, personnel, communauté</p></a>
     </div>
   </section>
 
@@ -75,10 +75,9 @@
       {e: '👨‍👩‍👧‍👦', t: 'Membre COGECS', d: 'Satisfaction des membres du COGECS', href: 'FormCogecs.html', code: true}
     ]},
     hopital: {title: '🏥 Hôpital', sub: "Hôpital de zone", cards: [
-      {e: '🏥', t: "Usagers de l'hôpital", d: 'Satisfaction des usagers', href: null, code: true},
-      {e: '🩺', t: "Personnel de l'hôpital", d: 'Satisfaction du personnel', href: null, code: false},
-      {e: '🏘️', t: 'Communauté', d: 'Perception de la communauté', href: null, code: true},
-      {e: '🤝', t: 'Acteurs communautaires', d: 'Satisfaction des acteurs communautaires', href: null, code: true}
+      {e: '🏥', t: "Usagers de l'hôpital", d: 'Satisfaction des usagers', href: 'FormUsagersHopital.html', code: true},
+      {e: '🩺', t: "Personnel de l'hôpital", d: 'Satisfaction du personnel', href: 'FormPersonnelHopital.html', code: false},
+      {e: '🏘️', t: 'Communauté', d: 'Perception de la communauté', href: 'FormCommunauteHopital.html', code: true}
     ]}
   };
   function $(id){return document.getElementById(id);}
