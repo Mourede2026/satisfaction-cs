@@ -144,7 +144,14 @@
       if (r.debut || r.fin) per = 'Période de collecte : ' + (r.debut ? 'du ' + r.debut : '') + (r.fin ? ' au ' + r.fin : '') + (r.joursRestants !== null ? ' · ' + r.joursRestants + ' jour(s) restant(s)' : '');
       var rules = ''; if (r.mins && (r.mins.duree || r.mins.intervalle)) rules = 'Un questionnaire est validé s\'il dure au moins ' + (r.mins.duree || 0) + ' min' + (r.mins.intervalle ? ' et s\'il commence au moins ' + r.mins.intervalle + ' min après la fin du précédent' : '') + '.';
       var rj = (r.rejDuree || r.rejInterv || r.rejPlafond) ? '<p class="hint">Rejetés : ' + r.rejDuree + ' trop court(s)' + (r.mins && r.mins.intervalle ? ', ' + r.rejInterv + ' trop rapproché(s) du précédent' : '') + (r.mins && r.mins.plafond ? ', ' + r.rejPlafond + ' au-delà du plafond de ' + r.mins.plafond + ' par jour et par téléphone' : '') + '. Ils sont enregistrés mais ne comptent pas pour votre objectif.</p>' : '';
-      box.innerHTML = '<h2>📊 Mon tableau de bord</h2>' + (per ? '<p class="hint">' + per + '</p>' : '') + '<table><thead><tr><th>Cible</th><th class="n">Validés</th><th class="n">Rejetés</th><th class="n">Objectif</th><th class="n">Reste à atteindre</th></tr></thead><tbody>' + rows + '</tbody></table>' + (rules ? '<p class="hint">' + rules + '</p>' : '') + rj;
+      var ctr = '';
+      if (r.centres && r.centres.length) {
+        var LB = {usagers: 'Usagers', cogecs: 'COGECS', communaute: 'Communauté'};
+        ctr = '<h2 style="margin-top:14px">🏥 Mes centres enquêtés (' + r.centres.length + ')</h2><table><thead><tr><th>Centre</th><th>Avancement (validés / quota)</th><th class="n">Montant</th></tr></thead><tbody>' +
+          r.centres.map(function(c){ return '<tr><td>' + c.centre + (c.complet ? ' ✅' : '') + '</td><td>' + Object.keys(c.cibles).map(function(k){ return (LB[k] || k) + ' ' + Math.min(c.cibles[k].valides, c.cibles[k].quota) + '/' + c.cibles[k].quota; }).join(' · ') + '</td><td class="n">' + c.montant + ' FCFA</td></tr>'; }).join('') +
+          '</tbody></table><p class="hint">Gain à ce jour : <b>' + (r.gain || 0) + ' FCFA</b>. Un centre complet rapporte ' + r.montantCentre + ' FCFA ; au-delà du quota, le surplus n\'est pas payé.</p>';
+      }
+      box.innerHTML = '<h2>📊 Mon tableau de bord</h2>' + (per ? '<p class="hint">' + per + '</p>' : '') + '<table><thead><tr><th>Cible</th><th class="n">Validés</th><th class="n">Rejetés</th><th class="n">Objectif</th><th class="n">Reste à atteindre</th></tr></thead><tbody>' + rows + '</tbody></table>' + (rules ? '<p class="hint">' + rules + '</p>' : '') + rj + ctr;
     }
     var cached = null; try { cached = JSON.parse(localStorage.getItem(ck) || 'null'); } catch (e) {}
     if (cached) draw(cached); else box.innerHTML = '<h2>📊 Mon tableau de bord</h2><p class="hint">Chargement…</p>';

@@ -1162,7 +1162,8 @@ function handleMyCounts(d) {
     cibles[f] = { valides: v, rejetes: r, objectif: o, reste: o === null ? null : Math.max(0, o - v) };
   });
   return { ok: true, cibles: cibles, mins: c.mins, debut: act.debut || '', fin: act.fin || '', joursRestants: c.totalDays ? Math.max(0, c.totalDays - c.elapsed) : null,
-    rejDuree: me ? me.rejDuree : 0, rejInterv: me ? me.rejInterv : 0, rejPlafond: me ? me.rejPlafond : 0 };
+    rejDuree: me ? me.rejDuree : 0, rejInterv: me ? me.rejInterv : 0, rejPlafond: me ? me.rejPlafond : 0,
+    quotas: c.quotas, montantCentre: c.mins.montantCentre, centres: me && me.centresDetail ? me.centresDetail : [], gain: me && me.centresDetail ? me.aPayer : null };
 }
 function handleRegisterEnqueteur(d) {
   var a = activityForInvoice_(d.code); if (!a) return { ok: false, error: 'ACT_INVALID' };
@@ -1343,7 +1344,8 @@ var SUP_LEVEL = 'superviseur_act';
 var AFF_SHEET = 'Affectations', AFF_HEADERS = ['IdActivité', 'Superviseur'];
 var OBJ_SHEET = 'Objectifs', OBJ_HEADERS = ['IdActivité', 'Enquêteur', 'Cible', 'Objectif'];
 var EFF_SHEET = 'Effectifs', EFF_HEADERS = ['IdActivité', 'Structure', 'Effectif'];
-var PAR_SHEET = 'SuiviParams', PAR_HEADERS = ['IdActivité', 'MontantTotal', 'ModifiéLe', 'ModifiéPar', 'DuréeMinMin', 'IntervalleMinMin', 'TailleCentre', 'PlafondPct'];
+var PAR_SHEET = 'SuiviParams', PAR_HEADERS = ['IdActivité', 'MontantTotal', 'ModifiéLe', 'ModifiéPar', 'DuréeMinMin', 'IntervalleMinMin', 'TailleCentre', 'PlafondPct', 'MontantCentre'];
+var QC_SHEET = 'QuotasCentre', QC_HEADERS = ['IdActivité', 'Cible', 'Quota'];
 var OBJ_ALL = '*'; // ligne d'objectif commune à tous les enquêteurs inscrits de l'activité
 var SUIVI_FORMS = { usagers: 'Usagers', cogecs: 'COGECS', communaute: 'Communauté' };
 var SUIVI_MAXDAYS = 400;
@@ -1403,10 +1405,15 @@ function objGlobal_(actId) {
 }
 /** Durées minimales (en minutes) fixées par l'administrateur pour valider un questionnaire : durée de saisie et intervalle depuis le précédent. */
 function minsOf_(actId) {
-  try { var psh = tsheet_(PAR_SHEET, PAR_HEADERS); if (!String(psh.getRange(1, 7).getValue())) psh.getRange(1, 1, 1, PAR_HEADERS.length).setValues([PAR_HEADERS]); } catch (e) {}
-  var o = { duree: 0, intervalle: 0, centre: 0, pct: 0, plafond: 0 }; suiviRows_(PAR_SHEET, PAR_HEADERS).forEach(function (r) { if (String(r.v[0]) === String(actId)) { o.duree = Math.max(0, Number(r.v[4]) || 0); o.intervalle = Math.max(0, Number(r.v[5]) || 0); o.centre = Math.max(0, Number(r.v[6]) || 0); o.pct = Math.max(0, Number(r.v[7]) || 0); } });
+  try { var psh = tsheet_(PAR_SHEET, PAR_HEADERS); if (!String(psh.getRange(1, 9).getValue())) psh.getRange(1, 1, 1, PAR_HEADERS.length).setValues([PAR_HEADERS]); } catch (e) {}
+  var o = { duree: 0, intervalle: 0, centre: 0, pct: 0, plafond: 0, montantCentre: 0 }; suiviRows_(PAR_SHEET, PAR_HEADERS).forEach(function (r) { if (String(r.v[0]) === String(actId)) { o.duree = Math.max(0, Number(r.v[4]) || 0); o.intervalle = Math.max(0, Number(r.v[5]) || 0); o.centre = Math.max(0, Number(r.v[6]) || 0); o.pct = Math.max(0, Number(r.v[7]) || 0); o.montantCentre = Math.max(0, Number(r.v[8]) || 0); } });
   o.plafond = (o.centre > 0 && o.pct > 0) ? Math.max(1, Math.floor(o.centre * o.pct / 100)) : 0;
   return o;
+}
+/** Quota attendu par centre et par cible (ex. 60 usagers, 3 COGECS) : fixé par l'administrateur pour chaque activité (zone sanitaire ou hôpital). */
+function quotasOf_(actId) {
+  var q = {}; suiviRows_(QC_SHEET, QC_HEADERS).forEach(function (r) { if (String(r.v[0]) === String(actId)) { var n = Number(r.v[2]); if (n > 0) q[String(r.v[1])] = n; } });
+  return q;
 }
 function montantOf_(actId) {
   var m = null; suiviRows_(PAR_SHEET, PAR_HEADERS).forEach(function (r) { if (String(r.v[0]) === String(actId)) { var n = Number(r.v[1]); if (n >= 0 && String(r.v[1]) !== '') m = n; } });
@@ -1419,7 +1426,7 @@ function suiviCompute_(act) {
   var today = day_(new Date()), ss = SpreadsheetApp.getActiveSpreadsheet();
   var srcs = (act.level === 'hopital' ? [['usagers', SHEET_USAGERS_H], ['communaute', SHEET_COMMUNAUTE_H]] : [['usagers', SHEET_USAGERS], ['cogecs', SHEET_COGECS]])
     .filter(function (x) { return !act.forms.length || act.forms.indexOf(x[0]) > -1; });
-  var enq = {}, order = [], allDays = {}, glob = objGlobal_(act.id), mins = minsOf_(act.id);
+  var enq = {}, order = [], allDays = {}, glob = objGlobal_(act.id), mins = minsOf_(act.id), quotas = quotasOf_(act.id);
   // Enquêteurs INSCRITS (nom, prénom, numéro saisis à leur première connexion) : ils forment la liste de suivi, même sans réponse
   enqList_(act.id).forEach(function (x) {
     var k = 'id:' + x.id; enq[k] = { key: k, id: x.id, name: x.prenom, nom: x.nom, numero: x.numero, inscrit: true, byForm: {}, daily: {}, objByForm: {} };
@@ -1440,7 +1447,7 @@ function suiviCompute_(act) {
       if (String(ids[i]) !== act.id) continue;
       var e = (eids[i] && enq['id:' + String(eids[i])]) || getE_(names[i]), d = days[i] || '';
       e.byForm[sr[0]] = (e.byForm[sr[0]] || 0) + 1;
-      (e.items = e.items || []).push({ f: sr[0], s: Date.parse(tsv[i]), e: Date.parse(tev[i]), dev: String(dvv[i] || ''), c: strip_(cenv[i]) });
+      (e.items = e.items || []).push({ f: sr[0], s: Date.parse(tsv[i]), e: Date.parse(tev[i]), dev: String(dvv[i] || ''), c: strip_(cenv[i]), cl: String(cenv[i] || '').trim() });
       if (d) { e.daily[d] = (e.daily[d] || 0) + 1; allDays[d] = 1; }
     }
   });
@@ -1448,7 +1455,7 @@ function suiviCompute_(act) {
   // Un questionnaire sans horodatage (anciennes réponses) ne peut pas être évalué : il reste valide.
   order.forEach(function (k) {
     var e = enq[k], its = (e.items || []).slice().sort(function (a, b) { return (isNaN(a.s) ? 0 : a.s) - (isNaN(b.s) ? 0 : b.s); }), prevEnd;
-    e.valid = {}; e.rej = {}; e.rejDuree = 0; e.rejInterv = 0; e.rejPlafond = 0; var perDay = {}, devs = {}; prevEnd = {};
+    e.valid = {}; e.rej = {}; e.rejDuree = 0; e.rejInterv = 0; e.rejPlafond = 0; e.centres = {}; var perDay = {}, devs = {}; prevEnd = {};
     its.forEach(function (it) {
       var bad = false; if (it.dev) devs[it.dev] = 1;
       if (!isNaN(it.s) && !isNaN(it.e)) {
@@ -1457,12 +1464,16 @@ function suiviCompute_(act) {
         else if (mins.intervalle > 0 && prevEnd[it.dev] !== undefined && (it.s - prevEnd[it.dev]) / 60000 < mins.intervalle) { bad = true; e.rejInterv++; }
         prevEnd[it.dev] = it.e;
         // plafond : un même téléphone ne peut pas valider plus de (taille du centre × %) questionnaires par jour, pour un même centre (structure) et une même cible ; les autres centres comptent à part
-        if (!bad && mins.plafond > 0 && it.dev && it.c && it.f !== 'cogecs') { // pas de plafond pour les COGECS (3 par centre seulement)
+        var capF = (it.f === 'cogecs') ? 0 : (quotas[it.f] ? Math.floor(quotas[it.f] * mins.pct / 100) : mins.plafond);
+        if (!bad && capF > 0 && mins.pct > 0 && it.dev && it.c) { // pas de plafond pour les COGECS (3 par centre seulement)
           var pk = it.dev + '|' + Utilities.formatDate(new Date(it.s), Session.getScriptTimeZone(), 'yyyy-MM-dd') + '|' + it.c + '|' + it.f;
-          if ((perDay[pk] || 0) >= mins.plafond) { bad = true; e.rejPlafond++; } else perDay[pk] = (perDay[pk] || 0) + 1;
+          if ((perDay[pk] || 0) >= Math.max(1, capF)) { bad = true; e.rejPlafond++; } else perDay[pk] = (perDay[pk] || 0) + 1;
         }
       }
-      if (bad) e.rej[it.f] = (e.rej[it.f] || 0) + 1; else e.valid[it.f] = (e.valid[it.f] || 0) + 1;
+      if (bad) e.rej[it.f] = (e.rej[it.f] || 0) + 1; else {
+        e.valid[it.f] = (e.valid[it.f] || 0) + 1;
+        if (it.c) { var ce = e.centres[it.c] = e.centres[it.c] || { label: it.cl, valid: {} }; ce.valid[it.f] = (ce.valid[it.f] || 0) + 1; }
+      }
     });
     e.nbAppareils = Object.keys(devs).length;
   });
@@ -1505,10 +1516,26 @@ function suiviCompute_(act) {
     list.forEach(function (e) { if (e.inscrit) { e.aPayer = Math.round(tarif * e.retenu); e.pctPaye = Math.round(e.retenu / objEach * 1000) / 10; dus += e.aPayer; } });
     paiement = { defini: true, montant: montant, nbInscrits: nIns, objectifParEnq: objEach, partParEnq: Math.round(montant / nIns), tarif: Math.round(tarif * 100) / 100, totalDu: dus, reste: Math.round(montant) - dus };
   }
+  // Paiement par centre : chaque centre enquêté rapporte le montant du centre s'il atteint le quota de chaque cible, au prorata sinon ;
+  // au-delà du quota d'une cible, le surplus n'est pas payé. L'enquêteur est payé pour tous les centres qu'il a faits.
+  var qSum = 0; formsKeys.forEach(function (fk) { qSum += quotas[fk] || 0; });
+  if (mins.montantCentre > 0 && qSum > 0) {
+    var dus2 = 0;
+    list.forEach(function (e) {
+      var src = enq[e.id ? 'id:' + e.id : 'n:' + (strip_(e.name) || 'non renseigne')]; e.centresDetail = []; e.aPayer = 0; var tot = 0;
+      Object.keys(src.centres || {}).forEach(function (ck) {
+        var ce = src.centres[ck], got = 0, det = {}; formsKeys.forEach(function (fk) { var q = quotas[fk] || 0, v = ce.valid[fk] || 0; if (q > 0) { got += Math.min(v, q); det[fk] = { valides: v, quota: q }; } });
+        var m = Math.round(mins.montantCentre * got / qSum); tot += m; e.centresDetail.push({ centre: ce.label, cibles: det, complet: got >= qSum, montant: m });
+      });
+      e.centresDetail.sort(function (a, b) { return String(a.centre).localeCompare(String(b.centre), 'fr'); });
+      e.nbCentres = e.centresDetail.length; if (e.inscrit) { e.aPayer = tot; dus2 += tot; } e.retenu = 0; formsKeys.forEach(function (fk) { Object.keys(src.centres || {}).forEach(function (ck) { e.retenu += Math.min(src.centres[ck].valid[fk] || 0, quotas[fk] || 0); }); });
+    });
+    paiement = { defini: true, mode: 'centre', montantCentre: mins.montantCentre, quotas: quotas, nbInscrits: nIns, totalDu: dus2, montant: montant };
+  }
   var attenduMoyen = (avgObj !== null && totalDays) ? days.map(function (d, i) { var t = Math.min(daysBetween_(act.debut || start, d) + 1, totalDays); return Math.round(avgObj * Math.max(0, t) / totalDays * 10) / 10; }) : null;
   var cumulTotal = days.map(function (d, i) { var s = 0; list.forEach(function (e) { s += e.cumul[i]; }); return s; });
   return { start: start, end: end, today: today, days: days, totalDays: totalDays, elapsed: elapsed, forms: formsKeys, enqueteurs: list, totals: totals,
-    avgObjectif: avgObj !== null ? Math.round(avgObj * 10) / 10 : null, mins: mins, paiement: paiement, attenduMoyen: attenduMoyen, cumulTotal: cumulTotal, nbObjectifs: withObj.length };
+    avgObjectif: avgObj !== null ? Math.round(avgObj * 10) / 10 : null, mins: mins, quotas: quotas, paiement: paiement, attenduMoyen: attenduMoyen, cumulTotal: cumulTotal, nbObjectifs: withObj.length };
 }
 /** Point du personnel : effectif attendu (saisi par l'administrateur) et réponses du formulaire personnel pendant la période. */
 function suiviPersonnel_(act, c) {
@@ -1555,7 +1582,7 @@ function handleSuiviConfig(token, actId) {
     var act = actById_(actId); if (!act) return { ok: false, error: 'Activité introuvable.' };
     out.forms = actForms_(act);
     out.enqueteurs = enqList_(act.id).map(function (x) { return { id: x.id, nom: x.nom, prenom: x.prenom, numero: x.numero }; });
-    out.objGlobal = objGlobal_(act.id); out.montant = montantOf_(act.id); var mn_ = minsOf_(act.id); out.dureeMin = mn_.duree; out.intervalleMin = mn_.intervalle; out.tailleCentre = mn_.centre; out.plafondPct = mn_.pct;
+    out.objGlobal = objGlobal_(act.id); out.montant = montantOf_(act.id); var mn_ = minsOf_(act.id); out.dureeMin = mn_.duree; out.intervalleMin = mn_.intervalle; out.tailleCentre = mn_.centre; out.plafondPct = mn_.pct; out.montantCentre = mn_.montantCentre; out.quotas = quotasOf_(act.id);
     if (c.admin) {
       out.assigned = suiviRows_(AFF_SHEET, AFF_HEADERS).filter(function (r) { return String(r.v[0]) === act.id; }).map(function (r) { return String(r.v[1]); });
       out.effectifs = suiviRows_(EFF_SHEET, EFF_HEADERS).filter(function (r) { return String(r.v[0]) === act.id; }).map(function (r) { return { structure: String(r.v[1]), effectif: Number(r.v[2]) || 0 }; });
@@ -1580,7 +1607,10 @@ function handleSuiviSave(token, actId, cfg) {
   if (dMin === null || iMin === null) return { ok: false, error: 'Les durées minimales doivent être comprises entre 0 et 600 minutes.' };
   var tC = Math.round(Number(String(cfg.tailleCentre === undefined || cfg.tailleCentre === null ? '' : cfg.tailleCentre).trim().replace(',', '.')) || 0), pP = Number(String(cfg.plafondPct === undefined || cfg.plafondPct === null ? '' : cfg.plafondPct).trim().replace(',', '.')) || 0;
   if (!(tC >= 0 && tC <= 100000) || !(pP >= 0 && pP <= 100)) return { ok: false, error: 'Taille du centre (0 à 100000) ou pourcentage (0 à 100) invalide.' };
-  if (m !== '' || dMin > 0 || iMin > 0 || tC > 0) par.push([act.id, m === '' ? '' : String(m), new Date().toISOString(), c.user, String(dMin), String(iMin), String(tC), String(pP)]);
+  var mc = Math.round(Number(String(cfg.montantCentre === undefined || cfg.montantCentre === null ? '' : cfg.montantCentre).trim().replace(/\s/g, '').replace(',', '.')) || 0);
+  if (!(mc >= 0 && mc <= 1000000000)) return { ok: false, error: 'Montant par centre invalide.' };
+  var qrows = []; forms.forEach(function (f) { var qn = Math.round(Number(String((cfg.quotas || {})[f] === undefined || (cfg.quotas || {})[f] === null ? '' : cfg.quotas[f]).trim().replace(',', '.')) || 0); if (qn > 0 && qn <= 100000) qrows.push([act.id, f, String(qn)]); });
+  if (m !== '' || dMin > 0 || iMin > 0 || tC > 0 || mc > 0) par.push([act.id, m === '' ? '' : String(m), new Date().toISOString(), c.user, String(dMin), String(iMin), String(tC), String(pP), String(mc)]);
   var aff = null, eff = null;
   if (c.admin) {
     var okSup = {}; var v = accountsSheet_().getDataRange().getValues(); for (var i = 1; i < v.length; i++) if (String(v[i][2]) === SUP_LEVEL) okSup[String(v[i][0])] = 1;
@@ -1593,11 +1623,11 @@ function handleSuiviSave(token, actId, cfg) {
   var lock = LockService.getScriptLock(); lock.waitLock(30000);
   try {
     if (aff) suiviReplace_(AFF_SHEET, AFF_HEADERS, act.id, aff);
-    suiviReplace_(OBJ_SHEET, OBJ_HEADERS, act.id, obj); suiviReplace_(PAR_SHEET, PAR_HEADERS, act.id, par);
+    suiviReplace_(OBJ_SHEET, OBJ_HEADERS, act.id, obj); suiviReplace_(PAR_SHEET, PAR_HEADERS, act.id, par); suiviReplace_(QC_SHEET, QC_HEADERS, act.id, qrows);
     if (eff) suiviReplace_(EFF_SHEET, EFF_HEADERS, act.id, eff);
     SpreadsheetApp.flush();
   } finally { lock.releaseLock(); }
-  return { ok: true, superviseurs: aff ? aff.length : null, objectifs: obj.length, effectifs: eff ? eff.length : null, montant: (par.length && par[0][1] !== '') ? Number(par[0][1]) : null, dureeMin: dMin, intervalleMin: iMin, tailleCentre: tC, plafondPct: pP };
+  return { ok: true, superviseurs: aff ? aff.length : null, objectifs: obj.length, effectifs: eff ? eff.length : null, montant: (par.length && par[0][1] !== '') ? Number(par[0][1]) : null, dureeMin: dMin, intervalleMin: iMin, tailleCentre: tC, plafondPct: pP, montantCentre: mc };
 }
 function handleCreateSupervisor(token, username, label, password) {
   var c = requireAdminSession_(token); if (!c.ok) return c;
