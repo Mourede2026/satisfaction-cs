@@ -210,14 +210,19 @@
    h+='<div class="scroll"><table><thead><tr><th>Enquêteur</th>'+d.forms.map(function(f){return '<th class="n">'+FORM_LBL[f]+'</th>';}).join('')+'<th class="n">Total</th><th class="n">Objectif</th><th class="n">Attendu</th><th class="n">Écart</th><th style="min-width:110px">Avancement</th><th>Statut</th><th>Rythme / jour</th><th>Dernière saisie</th></tr></thead><tbody>';
    d.enqueteurs.forEach(function(e){
     var st=statusOf(e),pc=e.pct;
-    h+='<tr><td><b>'+esc(e.name)+'</b>'+(e.inscrit?' <small style="color:#6b7280">N° '+esc(e.numero)+'</small>':' <small style="color:#c0392b">non inscrit</small>')+'</td>'+d.forms.map(function(f){var r=e.byForm[f]||0,o=e.objByForm[f];return '<td class="n">'+num(r)+(o!=null?' <span style="color:#9aa3ad">/ '+num(o)+'</span>':'')+'</td>';}).join('')+
+    h+='<tr><td><b>'+esc(e.name)+'</b>'+(e.inscrit?' <small style="color:#6b7280">N° '+esc(e.numero)+(e.nbCentres?' · '+e.nbCentres+' centre'+(e.nbCentres>1?'s':''):'')+'</small>':' <small style="color:#c0392b">non inscrit</small>')+'</td>'+d.forms.map(function(f){var r=e.byForm[f]||0,o=e.objByForm[f];return '<td class="n">'+num(r)+(o!=null?' <span style="color:#9aa3ad">/ '+num(o)+'</span>':'')+'</td>';}).join('')+
      '<td class="n"><b>'+num(e.total)+'</b></td><td class="n">'+(e.objectif!=null?num(e.objectif):'—')+'</td><td class="n">'+(e.attendu!=null?num(e.attendu,1):'—')+'</td>'+
      '<td class="n" style="color:'+(e.ecart==null?'#6b7280':e.ecart>=0?'#1a7f4b':'#c0392b')+'">'+(e.ecart==null?'—':(e.ecart>0?'+':'')+num(e.ecart,1))+'</td>'+
      '<td>'+(pc!=null?bar(pc,barColor(pc))+'<small>'+num(pc,1)+' %</small>':'—')+'</td><td><span class="pill '+st[0]+'">'+st[1]+'</span></td>'+
      '<td class="n">'+(e.rythmeReel!=null?num(e.rythmeReel,1):'—')+(e.rythmeRequis!=null?' <span style="color:#9aa3ad">(requis '+num(e.rythmeRequis,1)+')</span>':'')+'</td><td>'+(e.last?frDate(e.last):'—')+'</td></tr>';
+    if((e.centresDetail||[]).length){
+     h+='<tr><td colspan="'+(d.forms.length+9)+'" style="background:#fafbfc;padding:6px 10px 12px"><small style="color:#6b7280">Centres faits par '+esc(e.name)+' ('+e.centresDetail.length+') — objectif '+num(e.objectif)+' = '+num(e.objectif/Math.max(1,e.nbCentres))+' × '+Math.max(1,e.nbCentres)+'</small><table style="margin-top:4px">'+
+      e.centresDetail.map(function(c){var cs=d.forms.map(function(f){var x=c.cibles[f];return x?'<td class="n">'+FORM_LBL[f]+' '+num(x.valides)+' <span style="color:#9aa3ad">/ '+num(x.quota)+'</span></td>':'';}).join('');
+       return '<tr><td>'+esc(c.centre)+'</td>'+cs+'<td style="min-width:90px">'+bar(c.pct,barColor(c.pct))+'</td><td class="n">'+num(c.pct,1)+' %</td><td><span class="pill '+(c.complet?'p-ok':'p-warn')+'">'+(c.complet?'Complet':'En cours')+'</span></td></tr>';}).join('')+'</table></td></tr>';
+    }
    });
    h+='<tr style="font-weight:700;background:#fafbfc"><td>Ensemble</td>'+d.forms.map(function(f){var x=t.byForm[f];return '<td class="n">'+num(x.realise)+(x.objectif?' / '+num(x.objectif):'')+'</td>';}).join('')+'<td class="n">'+num(t.realise)+'</td><td class="n">'+(t.objectif?num(t.objectif):'—')+'</td><td class="n">'+(t.objectif&&d.totalDays?num(t.attendu,1):'—')+'</td><td></td><td colspan="4"></td></tr>';
-   h+='</tbody></table></div><p class="hint" style="margin-top:8px">« Attendu » = objectif × jours écoulés ÷ durée de l\'activité. « Rythme requis » = ce qui reste à collecter ÷ jours restants.</p>';
+   h+='</tbody></table></div><p class="hint" style="margin-top:8px">« Objectif » = quota d\'un centre × nombre de centres faits par l\'enquêteur (au moins 1). « Attendu » = objectif × jours écoulés ÷ durée de l\'activité. « Rythme requis » = ce qui reste à collecter ÷ jours restants.</p>';
   }else h+='<div class="empty">Aucun enquêteur pour le moment.</div>';
   h+='</div>';
   // paiement
