@@ -47,6 +47,7 @@ function doPost(e) {
     else if (action === "checkQr") out = { ok: true, valid: qrTokenValid_(d.token, d.level === 'hopital' ? ['enqueteur_hopital'] : d.level === 'zone' ? ['enqueteur'] : QR_ROLES) };
     else if (action === "submitFacture") out = handleSubmitFacture(d);
     else if (action === "matchFactureCode") out = handleMatchFactureCode(d.text);
+    else if (action === "getAttestation") out = handleGetAttestation(d);
     else if (action === "listEnqueteurs") out = handleListEnqueteurs(d.token);
     else if (action === "getFacture") out = handleGetFacture(d.token, d.id);
     else if (action === "setAttestationValide") out = handleSetAttestationValide(d.token, d.ids, d.valide);
@@ -1115,6 +1116,21 @@ function handleSubmitFacture(d) {
     SpreadsheetApp.flush();
     return { ok: true, nom: nom, prenom: prenom, ajoutees: blobs.length, total: have + blobs.length, activite: a.name };
   } finally { lock.releaseLock(); }
+}
+/** Pour l'enquêteur : renvoie les données de SON attestation, uniquement si l'administrateur l'a validée.
+ *  Accès : code de l'activité + nom + prénom (les mêmes que pour le dépôt). */
+function handleGetAttestation(d) {
+  var a = activityForInvoice_(d.code); if (!a) return { ok: false, error: 'ACT_INVALID' };
+  var nom = fmtNom_(d.nom), prenom = fmtPrenom_(d.prenom);
+  if (!nom || !prenom) return { ok: false, error: 'Indiquez votre nom et votre prénom.' };
+  var key = nameKey_(nom, prenom), ex = null;
+  rowsOf_(tsheet_(ENQ_SHEET_NAME, ENQ_HEADERS), ENQ_HEADERS.length).forEach(function (r) { if (String(r.v[1]) === a.id && String(r.v[9]) === key) ex = r; });
+  if (!ex) return { ok: true, status: 'inconnu' };
+  var nf = rowsOf_(tsheet_(FACT_SHEET_NAME, FACT_HEADERS), FACT_HEADERS.length).filter(function (r) { return String(r.v[1]) === String(ex.v[0]); }).length;
+  if (String(ex.v[11]) !== 'OUI') return { ok: true, status: 'attente', factures: nf, nom: String(ex.v[7]), prenom: String(ex.v[8]) };
+  var p = attestParamsMap_()[a.id];
+  if (!p || !p.dateSignature) return { ok: true, status: 'attente', factures: nf, nom: String(ex.v[7]), prenom: String(ex.v[8]) };
+  return { ok: true, status: 'valide', nom: String(ex.v[7]), prenom: String(ex.v[8]), level: a.level, cible: a.cible, debut: a.debut, fin: a.fin, params: p };
 }
 function attestParamsMap_() {
   var m = {};

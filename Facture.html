@@ -65,9 +65,19 @@
   <p class="hint" style="text-align:center"><a href="#" id="changeAct" style="color:#0f4c81">Ce n'est pas mon activité : changer</a></p>
  </section>
 
+ <section id="v-att" class="box" style="display:none">
+  <h1>🎓 Mon attestation</h1>
+  <p id="attP">Saisissez votre nom et prénom ci-dessus (les mêmes que pour votre facture), puis vérifiez.</p>
+  <button id="attGo" class="alt">🔍 Vérifier mon attestation</button>
+  <button id="attDl" style="display:none">⬇️ Télécharger mon attestation (PDF)</button>
+  <div id="attMsg" style="margin-top:10px;font-size:.9rem"></div>
+ </section>
+
  <a class="back" href="index.html">&larr; Retour à l'accueil</a>
 </main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="config.js"></script>
+<script src="attestation.js"></script>
 <script>
  var MAX_BYTES=5*1024*1024, BATCH=2;
  var $=function(i){return document.getElementById(i);};
@@ -76,7 +86,7 @@
  function frDate(s){return s?s.split('-').reverse().join('/'):'';}
  function store(k,v){try{if(v===null)localStorage.removeItem(k);else localStorage.setItem(k,v);}catch(e){}}
  function load(k){try{return localStorage.getItem(k)||'';}catch(e){return '';}}
- function show(id){['v-gate','v-form'].forEach(function(x){$(x).style.display=x===id?'block':'none';});}
+ function show(id){['v-gate','v-form'].forEach(function(x){$(x).style.display=x===id?'block':'none';});$('v-att').style.display=id==='v-form'?'block':'none';}
 
  /* ---------- Identification de l'activité ---------- */
  function setAct(c,a){
@@ -87,7 +97,7 @@
   var per=(act.debut||act.fin)?' · '+(act.debut?'du '+frDate(act.debut):'')+(act.fin?' au '+frDate(act.fin):''):'';
   $('actBanner').textContent='📅 '+act.name+(act.cible?' — '+act.cible:'')+per;
   try{var id=JSON.parse(load('fact_ident')||'null');if(id){if(!$('nom').value)$('nom').value=id.nom||'';if(!$('prenom').value)$('prenom').value=id.prenom||'';}}catch(e){}
-  show('v-form');draw();
+  show('v-form');draw();$('v-att').style.display='block';attStatus(true);
  }
  function tryCode(c,quiet){
   c=(c||'').trim();if(!c)return Promise.resolve(false);
@@ -163,6 +173,41 @@
   $('done').style.display='block';$('done').scrollIntoView({behavior:'smooth'});
  }
  $('more').onclick=function(){$('done').style.display='none';$('add').click();};
+
+ /* ---------- Mon attestation (disponible dès que l'administrateur l'a validée) ---------- */
+ var attData=null;
+ function libDefault(a){return String(a.cible||'').trim().replace(/^(zone\s+sanitaire\s+(de\s+|d['’]\s*)?|zs\s+|h[oô]pital\s+de\s+zone\s+(de\s+|d['’]\s*)?|h[oô]pital\s+(de\s+|d['’]\s*)?|hz\s+)/i,'');}
+ function attDoc(r){
+  var p=r.params||{},debut=p.debut||r.debut||'',fin=p.fin||r.fin||'';
+  return {level:r.level,libelle:p.libelle||libDefault(r),debut:debut,fin:fin,annee:p.annee||debut.slice(0,4)||fin.slice(0,4),lieu:p.lieu||'Cotonou',dateSignature:p.dateSignature,qualite:p.qualite||Attestation.QUALITE_DEFAUT,nom:r.nom,prenom:r.prenom};
+ }
+ function attMsg(t,c){var m=$('attMsg');m.className=c||'';m.textContent=t||'';}
+ function attStatus(auto){
+  var nom=$('nom').value.trim(),prenom=$('prenom').value.trim();
+  attData=null;$('attDl').style.display='none';
+  if(!nom||!prenom){if(!auto)attMsg('Indiquez votre nom et votre prénom.','err');return;}
+  if(!navigator.onLine){if(!auto)attMsg('Pas de connexion Internet.','err');return;}
+  $('attGo').disabled=true;if(!auto)attMsg('Vérification…');
+  callApi('getAttestation',{code:code,nom:nom,prenom:prenom}).then(function(r){
+   $('attGo').disabled=false;
+   if(r&&r.error==='ACT_INVALID'){attMsg("Cette activité n'est plus ouverte.",'err');return;}
+   if(!r||!r.ok){attMsg((r&&r.error)||'Erreur.','err');return;}
+   if(r.status==='valide'){attData=r;$('attDl').style.display='block';$('attP').textContent='Votre attestation a été validée par l\'administrateur.';attMsg('✅ Attestation prête pour '+r.nom+' '+r.prenom+'.','ok');}
+   else if(r.status==='attente'){attMsg('⏳ Votre dossier est bien enregistré ('+r.factures+' facture'+(r.factures>1?'s':'')+'). Votre attestation sera disponible ici dès sa validation par l\'administrateur.');}
+   else if(!auto)attMsg("Aucun dépôt trouvé à ce nom pour cette activité. Vérifiez l'orthographe de votre nom et prénom, ou déposez d'abord votre facture.",'err');
+  }).catch(function(e){$('attGo').disabled=false;if(!auto)attMsg((e&&e.message)||'Erreur de connexion.','err');});
+ }
+ $('attGo').onclick=function(){attStatus(false);};
+ $('attDl').onclick=function(){
+  if(!attData)return;var b=$('attDl'),t=b.textContent;b.disabled=true;b.textContent='Génération…';
+  var d=attDoc(attData);
+  Attestation.toPdfBlob(d).then(function(blob){
+   var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=Attestation.fileName(d);document.body.appendChild(a);a.click();
+   setTimeout(function(){URL.revokeObjectURL(a.href);a.remove();},1500);b.textContent=t;b.disabled=false;
+  }).catch(function(e){b.textContent=t;b.disabled=false;attMsg((e&&e.message)||'Génération impossible (connexion Internet requise).','err');});
+ };
+ // après un envoi : le dossier est enregistré, on vérifie aussitôt l'état de l'attestation
+ var _finish=finish;finish=function(n,r){_finish(n,r);attStatus(true);};
 
  /* ---------- Démarrage : activité déjà connue sur cet appareil ? ---------- */
  (function(){

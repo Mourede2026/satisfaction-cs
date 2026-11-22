@@ -49,6 +49,9 @@
  .stat{display:flex;gap:16px;flex-wrap:wrap;font-size:.85rem;color:#4b5563;margin:6px 0 0}.stat b{color:#1f2937}
  #modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:40;padding:14px}
  #modal .in{background:#fff;border-radius:14px;padding:12px;max-width:1000px;width:100%;max-height:96vh;overflow:auto}
+ #fmodal{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:41;padding:10px}
+ #fmodal .in{background:#fff;border-radius:14px;padding:10px;width:100%;max-width:900px;height:94vh;display:flex;flex-direction:column}
+ #fmodal iframe{flex:1;border:1px solid #e5e9ee;width:100%;border-radius:8px}
  #modal canvas{width:100%;height:auto;display:block;border:1px solid #e5e9ee}
  .prog{height:8px;background:#e5e9ee;border-radius:99px;overflow:hidden;margin-top:10px;display:none}.prog i{display:block;height:100%;width:0;background:var(--brand);transition:width .2s}
  .warn{background:#fff4e0;color:#8a5200;border-radius:10px;padding:8px 12px;font-size:.84rem;margin-top:10px}
@@ -119,6 +122,7 @@
  </div>
 </main>
 <div id="modal" onclick="if(event.target===this)this.style.display='none'"><div class="in"><div class="row" style="margin:0 0 8px"><b style="flex:1">Aperçu (exemple avec un nom fictif ou le premier enquêteur)</b><button class="alt" onclick="$('modal').style.display='none'">Fermer</button></div><canvas id="pv"></canvas></div></div>
+<div id="fmodal" onclick="if(event.target===this)closeFact()"><div class="in"><div class="row" style="margin:0 0 8px"><b style="flex:1" id="fmTitle">Facture</b><button class="alt" id="fmDl">⬇️ Télécharger</button><button class="alt" onclick="closeFact()">Fermer</button></div><iframe id="fmFrame" title="Aperçu de la facture"></iframe></div></div>
 <div id="toast"></div>
 <script src="config.js"></script>
 <script src="attestation.js"></script>
@@ -268,16 +272,17 @@
    api('updateEnqueteur',{id:e.id,nom:n.querySelector('#en').value,prenom:n.querySelector('#ep').value}).then(function(r){e.nom=r.nom;e.prenom=r.prenom;toast('Nom modifié');drawList();}).catch(function(x){err(x.message);});
   };
  }
+ var fmUrl='';
+ function closeFact(){$('fmodal').style.display='none';$('fmFrame').src='about:blank';if(fmUrl){URL.revokeObjectURL(fmUrl);fmUrl='';}}
+ /** Aperçu intégré de la facture (PDF réellement lu depuis Google Sheets), avec bouton de téléchargement. */
  function openFacture(id,btn){
-  var w=window.open('','_blank');btn.disabled=true;
+  btn.disabled=true;
   api('getFacture',{id:id}).then(function(r){
-   var bin=atob(r.b64),u=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);
-   var blob=new Blob([u],{type:'application/pdf'});
-   if(w)w.location.href=URL.createObjectURL(blob);else saveBlob(blob,r.name);
-   btn.disabled=false;
-  }).catch(function(x){if(w)w.close();btn.disabled=false;err(x.message);});
+   var blob=b64blob(r.b64);if(fmUrl)URL.revokeObjectURL(fmUrl);fmUrl=URL.createObjectURL(blob);
+   $('fmTitle').textContent=r.name;$('fmFrame').src=fmUrl;$('fmDl').onclick=function(){saveBlob(blob,r.name);};
+   $('fmodal').style.display='flex';btn.disabled=false;
+  }).catch(function(x){btn.disabled=false;err(x.message);});
  }
-
  function b64blob(b64){var bin=atob(b64),u=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return new Blob([u],{type:'application/pdf'});}
  function downloadFacture(id,btn){
   btn.disabled=true;
