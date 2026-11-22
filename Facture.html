@@ -43,12 +43,18 @@
  <!-- Étape 2 : dépôt -->
  <section id="v-form" style="display:none">
   <div class="box">
-   <h1>🧾 Déposer ma facture</h1>
+   <h1>🧾 Mon identité et ma facture</h1>
    <div class="act" id="actBanner"></div>
-   <p>À la fin de l'activité, joignez votre <b>facture normalisée (PDF)</b>. Votre identité (nom, prénom, numéro d'enquêteur) est celle de votre inscription. Vous pouvez ajouter plusieurs factures, à plusieurs moments. Votre attestation sera établie à partir de ces informations, après validation par l'administrateur.</p>
+   <p>À la fin de l'activité, joignez votre <b>facture normalisée (PDF)</b>. Si vous êtes déjà enregistré, vos informations sont reprises automatiquement : ajoutez seulement vos factures. Vous pouvez ajouter plusieurs factures, à plusieurs moments. Votre attestation sera établie à partir de ces informations, après validation par l'administrateur.</p>
+   <div id="identBox" class="act" style="display:none;margin-top:10px"><span id="identTxt"></span> <a href="#" id="identEdit" style="color:#0f4c81;margin-left:6px">Ce n'est pas moi / modifier</a></div>
+   <div id="identFields">
    <label for="nom">Nom</label><input id="nom" type="text" autocomplete="family-name" autocapitalize="characters">
    <label for="prenom">Prénom(s)</label><input id="prenom" type="text" autocomplete="given-name" autocapitalize="words">
    <label for="numero">Numéro d'enquêteur</label><input id="numero" type="text" autocomplete="off" autocapitalize="characters" placeholder="Ex. 07">
+   <button class="alt" id="reg" style="margin-top:14px">✅ M'enregistrer (sans facture)</button>
+   <p class="hint" style="margin-top:6px">Vous pouvez envoyer seulement votre identité dès maintenant : l'administrateur et le superviseur vous verront dans la liste des enquêteurs. La facture pourra être ajoutée plus tard.</p>
+   <div id="regmsg" style="font-size:.9rem;min-height:1.2em"></div>
+   </div>
    <label>Factures normalisées (PDF, 5 Mo maximum chacune)</label>
    <input id="pick" type="file" accept="application/pdf,.pdf" multiple style="display:none">
    <button class="alt" id="add" style="margin-top:4px">➕ Ajouter une facture (PDF)</button>
@@ -98,8 +104,15 @@
   var per=(act.debut||act.fin)?' · '+(act.debut?'du '+frDate(act.debut):'')+(act.fin?' au '+frDate(act.fin):''):'';
   $('actBanner').textContent='📅 '+act.name+(act.cible?' — '+act.cible:'')+per;
   try{var id=getEnqByCode(code)||JSON.parse(load('fact_ident')||'null');if(id){if(!$('nom').value)$('nom').value=id.nom||'';if(!$('prenom').value)$('prenom').value=id.prenom||'';if(!$('numero').value)$('numero').value=id.numero||'';}}catch(e){}
+  lockIdent($('nom').value.trim()&&$('prenom').value.trim()&&$('numero').value.trim());
   show('v-form');draw();$('v-att').style.display='block';attStatus(true);
  }
+ // Identité déjà enregistrée : les champs sont masqués, l'enquêteur ajoute seulement ses factures
+ function lockIdent(on){
+  $('identFields').style.display=on?'none':'block';$('identBox').style.display=on?'block':'none';
+  if(on)$('identTxt').textContent='👤 '+$('prenom').value.trim()+' '+$('nom').value.trim()+' (N° '+$('numero').value.trim()+')';
+ }
+ $('identEdit').onclick=function(e){e.preventDefault();lockIdent(false);};
  function tryCode(c,quiet){
   c=(c||'').trim();if(!c)return Promise.resolve(false);
   return callApi('matchFactureCode',{text:c}).then(function(r){
@@ -144,6 +157,26 @@
  function b64(file){
   return new Promise(function(res,rej){var r=new FileReader();r.onload=function(){res(String(r.result).split(',')[1]||'');};r.onerror=function(){rej(new Error('Lecture impossible : '+file.name));};r.readAsDataURL(file);});
  }
+
+ /* ---------- Enregistrement de l'identité seule (sans facture) ---------- */
+ function regSay(t,c){var m=$('regmsg');m.className=c||'';m.textContent=t||'';}
+ $('reg').onclick=function(){
+  var nom=$('nom').value.trim(),prenom=$('prenom').value.trim(),numero=$('numero').value.trim();
+  if(!nom||!prenom||!numero){regSay('Indiquez votre nom, votre prénom et votre numéro d\'enquêteur.','err');return;}
+  if(!navigator.onLine){regSay("Pas de connexion Internet : réessayez dès qu'elle revient.",'err');return;}
+  var b=$('reg');b.disabled=true;regSay('Enregistrement…');
+  callApi('registerEnqueteur',{code:code,nom:nom,prenom:prenom,numero:numero}).then(function(r){
+   b.disabled=false;
+   if(r&&r.error==='ACT_INVALID'){gate("Cette activité n'accepte plus d'inscription. Scannez le code de la bonne activité ou contactez l'administrateur.");return;}
+   if(!r||!r.ok){regSay((r&&r.error)||"Échec de l'enregistrement.",'err');return;}
+   store('fact_ident',JSON.stringify({nom:r.nom,prenom:r.prenom,numero:r.numero}));
+   var lv=act&&act.level==='hopital'?'hopital':'zone';
+   if(getQr(lv)===code)setEnq(lv,{code:code,id:r.id,nom:r.nom,prenom:r.prenom,numero:r.numero});
+   $('nom').value=r.nom;$('prenom').value=r.prenom;$('numero').value=r.numero;
+   regSay('✅ '+(r.created?'Enregistré : ':'Déjà enregistré : ')+r.prenom+' '+r.nom+' (N° '+r.numero+'). Vous apparaissez dans la liste des enquêteurs.','ok');
+   lockIdent(true);attStatus(true);
+  }).catch(function(e){b.disabled=false;regSay((e&&e.message)||'Erreur de connexion.','err');});
+ };
 
  /* ---------- Envoi ---------- */
  $('send').onclick=function(){
@@ -208,7 +241,7 @@
   }).catch(function(e){b.textContent=t;b.disabled=false;attMsg((e&&e.message)||'Génération impossible (connexion Internet requise).','err');});
  };
  // après un envoi : le dossier est enregistré, on vérifie aussitôt l'état de l'attestation
- var _finish=finish;finish=function(n,r){_finish(n,r);attStatus(true);};
+ var _finish=finish;finish=function(n,r){_finish(n,r);lockIdent(true);attStatus(true);};
 
  /* ---------- Démarrage : activité déjà connue sur cet appareil ? ---------- */
  (function(){

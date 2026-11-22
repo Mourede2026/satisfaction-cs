@@ -105,3 +105,8 @@ Penser à **Enregistrer la configuration**.
 **Compteur** : sur l'accueil, chaque bouton de cible (Usagers, COGECS, Communauté) affiche « 📊 N enregistrements » : le nombre de questionnaires déjà reçus par le serveur pour cet enquêteur dans son activité, plus ceux encore en attente de synchronisation sur son appareil. Hors connexion, la dernière valeur connue est affichée.
 
 **Inscription obligatoire** : dès qu'une activité est scannée, l'enquêteur est redirigé vers `Enqueteur.html` (nom, prénom, numéro) avant de voir les cibles ou d'ouvrir un formulaire. Le superviseur voit tous les inscrits, même sans réponse, dans `AdminSuivi.html`.
+
+## Identité seule depuis la page Facture (v16)
+Dans `Facture.html`, le bouton **✅ M'enregistrer (sans facture)** envoie uniquement nom, prénom et numéro d'enquêteur : l'enquêteur apparaît aussitôt dans la liste de l'administrateur et des superviseurs (`AdminSuivi.html`, `AdminAttestations.html`), sans déposer de facture. La facture s'ajoute plus tard avec les mêmes informations. L'objectif par cible défini dans la configuration du suivi s'applique automatiquement à chaque inscrit. Aucun changement de `Code.gs` : déposez seulement `Facture.html` et `sw.js`.
+
+(v17) Dans `Facture.html`, un enquêteur déjà enregistré voit son identité en rappel (prénom, nom, numéro) au lieu des champs : il ajoute seulement ses factures. Le lien « Ce n'est pas moi / modifier » rouvre les champs. Seuls `Facture.html` et `sw.js` changent.
