@@ -4,7 +4,7 @@
 <base target="_top">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tableau de bord admin</title>
+<title>Tableau de bord - Satisfaction</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <style>
   :root{--brand:#0f4c81;}
@@ -53,18 +53,31 @@
   .infoLine{font-size:.8rem;color:#6b7280;margin-bottom:10px}
   .emptyNote{font-size:.85rem;color:#9aa5b1;font-style:italic;padding:20px 0;text-align:center}
   .catCanvasWrap canvas{max-height:none}
+  .periodBar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .periodBar label{font-size:.85rem;color:#6b7280;font-weight:600}
+  .periodBar select{flex:1;min-width:200px;padding:12px 14px;border-radius:10px;border:1px solid #dfe4ea;font-size:1rem;background:#fff;color:#1f2937}
+  .scopeInfo{font-size:.78rem;color:#6b7280;width:100%}
+  .pform{display:grid;gap:8px}
+  @media (min-width:700px){.pform{grid-template-columns:2fr 1fr 1fr auto;align-items:end}}
+  .pform label{font-size:.78rem;color:#6b7280;display:block}
+  .pform input{width:100%;padding:10px;border:1px solid #dfe4ea;border-radius:10px;font-size:1rem;font-family:inherit}
+  .btn{padding:10px 14px;border-radius:10px;border:0;background:var(--brand);color:#fff;font-weight:600;cursor:pointer;font-family:inherit}
+  .btn.alt{background:#fff;color:var(--brand);border:1px solid var(--brand);font-weight:500;font-size:.85rem}
+  .btn.dng{background:#fff;color:#c0392b;border:1px solid #c0392b;font-weight:500;font-size:.8rem;padding:6px 10px}
+  .qrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
+  .qrow input{width:110px;padding:9px;border:1px solid #dfe4ea;border-radius:10px;font-size:1rem}
 </style>
 <script src="config.js"></script>
 <link rel="manifest" href="manifest.json"><meta name="theme-color" content="#0f4c81"><link rel="icon" href="icon-192.png">
 </head>
 <body>
 <header>
-  <h1>📊 Tableau de bord — Satisfaction Zones Sanitaires</h1>
+  <h1>📊 Tableau de bord — Satisfaction</h1>
   <a href="index.html">Accueil</a>
 </header>
 
 <div id="loginBox">
-  <h2>🔒 Accès administrateur</h2>
+  <h2>🔒 Connexion</h2>
   <input type="text" id="userInput" placeholder="Identifiant" style="margin-bottom:8px">
   <input type="password" id="pwdInput" placeholder="Mot de passe" onkeydown="if(event.key==='Enter')login()">
   <button onclick="login()">Se connecter</button>
@@ -77,11 +90,22 @@
     <button id="refreshBtn" onclick="loadData(false)">🔄 Actualiser</button>
   </div>
 
-  <div class="kpis">
+  <div class="card periodBar">
+    <label for="periodSelect">🗓️ Période</label>
+    <select id="periodSelect" onchange="onPeriodChange()"><option value="auto">Chargement…</option></select>
+    <div class="scopeInfo" id="scopeInfo"></div>
+  </div>
+
+  <div class="kpis" id="kpiZone">
     <div class="kpi"><div class="num" id="kpiUsagers">–</div><div class="lbl">👩‍👦 Réponses Usagers</div></div>
     <div class="kpi"><div class="num" id="kpiPersonnels">–</div><div class="lbl">👩‍⚕️ Réponses Personnel</div></div>
     <div class="kpi"><div class="num" id="kpiCogecs">–</div><div class="lbl">👨‍👩‍👧‍👦 Réponses COGECS</div></div>
     <div class="kpi"><div class="num" id="kpiTotal">–</div><div class="lbl">📋 Total enregistrements</div></div>
+  </div>
+  <div class="kpis" id="kpiHop">
+    <div class="kpi"><div class="num" id="kpiHU">–</div><div class="lbl">🏥 Hôpital : usagers</div></div>
+    <div class="kpi"><div class="num" id="kpiHP">–</div><div class="lbl">🩺 Hôpital : personnel</div></div>
+    <div class="kpi"><div class="num" id="kpiHC">–</div><div class="lbl">🏘️ Hôpital : communauté</div></div>
   </div>
 
   <div class="tabs">
@@ -90,6 +114,9 @@
     <div class="tab" data-panel="p-usagers" onclick="showPanel('p-usagers', this)">👩‍👦 Usagers</div>
     <div class="tab" data-panel="p-personnels" onclick="showPanel('p-personnels', this)">👩‍⚕️ Personnel</div>
     <div class="tab" data-panel="p-cogecs" onclick="showPanel('p-cogecs', this)">👨‍👩‍👧‍👦 COGECS</div>
+    <div class="tab" data-panel="p-hopital" onclick="showPanel('p-hopital', this)">🏥 Hôpitaux</div>
+    <div class="tab" data-panel="p-trend" onclick="showPanel('p-trend', this)">📈 Évolution</div>
+    <div class="tab" data-panel="p-periodes" id="tabPeriodes" style="display:none" onclick="showPanel('p-periodes', this)">⚙️ Périodes</div>
   </div>
 
   <div id="p-commune" class="panel active">
@@ -170,12 +197,79 @@
       <table id="tblCStructure"></table>
     </div>
   </div>
+
+  <div id="p-hopital" class="panel">
+    <div class="card communeBar">
+      <label for="hospSelect">🏥 Hôpital</label>
+      <select id="hospSelect" onchange="renderHospitalView()"><option>Chargement…</option></select>
+    </div>
+    <div class="card">
+      <h2>🏥 Usagers de l'hôpital — satisfaction par rubrique</h2>
+      <div class="infoLine" id="hospUInfo"></div>
+      <div class="catCanvasWrap"><canvas id="chartHospU"></canvas></div>
+      <div class="emptyNote" id="hospUEmpty" style="display:none">Aucune réponse pour cette sélection.</div>
+    </div>
+    <div class="card">
+      <h2>🩺 Personnel de l'hôpital — satisfaction par rubrique</h2>
+      <div class="infoLine" id="hospPInfo"></div>
+      <div class="catCanvasWrap"><canvas id="chartHospP"></canvas></div>
+      <div class="emptyNote" id="hospPEmpty" style="display:none">Aucune réponse pour cette sélection.</div>
+    </div>
+    <div class="card">
+      <h2>🏘️ Communauté — satisfaction par rubrique</h2>
+      <div class="infoLine" id="hospCInfo"></div>
+      <div class="catCanvasWrap"><canvas id="chartHospC"></canvas></div>
+      <div class="emptyNote" id="hospCEmpty" style="display:none">Aucune réponse pour cette sélection.</div>
+    </div>
+    <div class="card">
+      <h2>Comparaison des hôpitaux (satisfaction %)</h2>
+      <div class="catCanvasWrap"><canvas id="chartHospComp"></canvas></div>
+      <table id="tblHosp"></table>
+    </div>
+  </div>
+
+  <div id="p-trend" class="panel">
+    <div class="card">
+      <h2>Évolution de la satisfaction par période (%)</h2>
+      <div class="infoLine">Toutes les périodes définies, dans la limite de vos données. Choisissez une période en haut pour détailler les graphiques des autres onglets.</div>
+      <canvas id="chartTrend"></canvas>
+      <div class="emptyNote" id="trendEmpty" style="display:none">Aucune période définie ou aucune donnée.</div>
+    </div>
+    <div class="card"><h2>Détail par période (réponses · satisfaction)</h2><div style="overflow-x:auto"><table id="tblTrend"></table></div></div>
+  </div>
+
+  <div id="p-periodes" class="panel">
+    <div class="card">
+      <h2>Périodes de collecte</h2>
+      <div class="infoLine">Une réponse est rattachée à une période selon sa date d'envoi. Vous pouvez définir des années, des semestres ou toute autre période, sur plusieurs années.</div>
+      <div style="overflow-x:auto"><table id="tblPeriodes"></table></div>
+    </div>
+    <div class="card">
+      <h2>Ajouter une période</h2>
+      <div class="pform">
+        <div><label>Nom</label><input id="pLabel" placeholder="Ex. Semestre 1 - 2026"></div>
+        <div><label>Début</label><input id="pStart" type="date"></div>
+        <div><label>Fin</label><input id="pEnd" type="date"></div>
+        <button class="btn" onclick="addPeriod()">Ajouter</button>
+      </div>
+      <div class="qrow">
+        <span class="infoLine" style="margin:0">Création rapide pour l'année</span>
+        <input id="pYear" type="number" min="2000" max="2100">
+        <button class="btn alt" onclick="quickPeriods('annee')">Année</button>
+        <button class="btn alt" onclick="quickPeriods('semestres')">2 semestres</button>
+        <button class="btn alt" onclick="quickPeriods('trimestres')">4 trimestres</button>
+      </div>
+      <div id="pMsg" class="infoLine" style="margin-top:10px"></div>
+    </div>
+  </div>
 </main>
 
 <script>
 let tok = '';
 let charts = {};
 let autoTimer = null;
+let currentPeriod = 'auto';
+let acct = null;
 
 function login(){
   var pwdIn = document.getElementById('pwdInput').value;
@@ -184,6 +278,8 @@ function login(){
     .then(res=>{
       if (!res || !res.ok){ document.getElementById('loginError').textContent = (res && res.error) || 'Identifiant ou mot de passe incorrect.'; return; }
       tok = res.token;
+      acct = res.account || {};
+      setupForAccount();
       document.getElementById('loginBox').style.display = 'none';
       document.getElementById('dashRoot').style.display = 'block';
       loadData(true);
@@ -200,7 +296,7 @@ function showPanel(id, el){
 }
 
 function loadData(first){
-  callApi('getDashboardData', {token: tok}, '')
+  callApi('getDashboardData', {token: tok, filter: {periode: currentPeriod}}, '')
     .then(renderData)
     .catch(()=>{ document.getElementById('lastUpdate').textContent = 'Erreur lors du chargement.'; });
 }
@@ -323,10 +419,156 @@ function populateCommuneSelect(cr){
 
 let lastData = null;
 
+function setupForAccount(){
+  const lvl = acct.level || '';
+  const full = ['admin','national','superviseur'].includes(lvl);
+  const zoneTabs = ['p-commune','p-global','p-usagers','p-personnels','p-cogecs'];
+  const showZone = lvl !== 'hopital', showHosp = lvl !== 'commune';
+  document.querySelectorAll('.tab').forEach(t=>{
+    const p = t.dataset.panel;
+    if (p === 'p-periodes') t.style.display = lvl === 'admin' ? '' : 'none';
+    else if (zoneTabs.includes(p)) t.style.display = showZone ? '' : 'none';
+    else if (p === 'p-hopital') t.style.display = showHosp ? '' : 'none';
+  });
+  document.getElementById('kpiZone').style.display = showZone ? '' : 'none';
+  document.getElementById('kpiHop').style.display = showHosp ? '' : 'none';
+  const first = Array.from(document.querySelectorAll('.tab')).find(t=>t.style.display !== 'none');
+  if (first) showPanel(first.dataset.panel, first);
+  const labels = {admin:'Administrateur (toutes les données, plusieurs années)', national:'National', superviseur:'Superviseur', departement:'Département ' + (acct.departement||''), zone:'Zone sanitaire ' + (acct.zone||''), commune:'Commune ' + (acct.commune||''), hopital:'Hôpital ' + (acct.commune||'')};
+  document.getElementById('scopeInfo').textContent = 'Compte : ' + (acct.label || acct.username || '') + ' — ' + (labels[lvl] || lvl);
+  const y = document.getElementById('pYear'); if (y && !y.value) y.value = new Date().getFullYear();
+}
+
+function onPeriodChange(){
+  currentPeriod = document.getElementById('periodSelect').value;
+  loadData(false);
+}
+
+function renderPeriodSelect(d){
+  const sel = document.getElementById('periodSelect');
+  const opts = ['<option value="toutes">Toutes les périodes (cumul)</option>'].concat((d.periods||[]).map(p=>`<option value="${p.id}">${p.label} (${p.start} → ${p.end})</option>`));
+  sel.innerHTML = opts.join('');
+  sel.value = d.selectedPeriod || 'toutes';
+  currentPeriod = sel.value;
+}
+
+function hospNames(d){
+  const set = new Set();
+  ['usagers','personnel','communaute'].forEach(k=>{ ((d.hopital||{})[k]||{byHopital:[]}).byHopital.forEach(h=>set.add(h.label)); });
+  return Array.from(set).sort((a,b)=>a.localeCompare(b,'fr'));
+}
+
+function renderHospitalCard(canvasId, infoId, emptyId, rec, cats){
+  const wrap = document.getElementById(canvasId).parentElement, emptyEl = document.getElementById(emptyId), infoEl = document.getElementById(infoId);
+  if (!rec || !rec.count){ wrap.style.display = 'none'; emptyEl.style.display = 'block'; infoEl.textContent = ''; return; }
+  wrap.style.display = 'block'; emptyEl.style.display = 'none';
+  infoEl.textContent = `${rec.count} réponse${rec.count>1?'s':''}` + (rec.avgScore!==null && rec.avgScore!==undefined ? ` · Satisfaction globale ${rec.avgScore}%` : '');
+  const names = (cats||[]).filter(c=>rec.categoryScores && rec.categoryScores[c] !== null && rec.categoryScores[c] !== undefined);
+  horizontalScoreChart(canvasId, names, names.map(c=>rec.categoryScores[c]));
+}
+
+function renderHospitalView(){
+  if (!lastData || !lastData.hopital) return;
+  const hv = document.getElementById('hospSelect').value, H = lastData.hopital;
+  function rec(k){
+    const x = H[k]; if (!x) return null;
+    if (hv === '__all__') return {count: x.all.count, avgScore: x.avgScore, categoryScores: x.all.categoryScores};
+    return x.byHopital.find(r=>r.label === hv) || null;
+  }
+  renderHospitalCard('chartHospU','hospUInfo','hospUEmpty', rec('usagers'), (H.usagers||{}).categories);
+  renderHospitalCard('chartHospP','hospPInfo','hospPEmpty', rec('personnel'), (H.personnel||{}).categories);
+  renderHospitalCard('chartHospC','hospCInfo','hospCEmpty', rec('communaute'), (H.communaute||{}).categories);
+}
+
+function renderHospitalAll(d){
+  const sel = document.getElementById('hospSelect'), prev = sel.value, names = hospNames(d);
+  sel.innerHTML = '<option value="__all__">Tous les hôpitaux (ensemble)</option>' + names.map(n=>`<option value="${n.replace(/"/g,'&quot;')}">${n}</option>`).join('');
+  if (prev === '__all__' || names.includes(prev)) sel.value = prev;
+  renderHospitalView();
+  const H = d.hopital || {};
+  const get = (k,n)=>{ const r = ((H[k]||{byHopital:[]}).byHopital).find(x=>x.label===n); return r ? r.avgScore : null; };
+  const ctx = document.getElementById('chartHospComp').getContext('2d');
+  if (charts.chartHospComp) charts.chartHospComp.destroy();
+  const wrap = document.getElementById('chartHospComp').parentElement; wrap.style.height = Math.max(220, names.length * 46 + 80) + 'px';
+  charts.chartHospComp = new Chart(ctx, {type:'bar', data:{labels:names, datasets:[
+    {label:'Usagers', data:names.map(n=>get('usagers',n)), backgroundColor:'#0f4c81', borderRadius:4},
+    {label:'Personnel', data:names.map(n=>get('personnel',n)), backgroundColor:'#e08e0b', borderRadius:4},
+    {label:'Communauté', data:names.map(n=>get('communaute',n)), backgroundColor:'#1f9d55', borderRadius:4}]},
+    options:{indexAxis:'y', responsive:true, maintainAspectRatio:false, scales:{x:{beginAtZero:true,max:100,title:{display:true,text:'Satisfaction (%)'}}, y:{ticks:{autoSkip:false}}}}});
+  let t = '<tr><th>Hôpital</th><th>Zone</th><th>Usagers</th><th>Personnel</th><th>Communauté</th></tr>';
+  const cell = (k,n)=>{ const r = ((H[k]||{byHopital:[]}).byHopital).find(x=>x.label===n); return r ? `${r.count} · ${r.avgScore!==null?r.avgScore+'%':'–'}` : '–'; };
+  const zoneOf = n=>{ for (const k of ['usagers','personnel','communaute']){ const r = ((H[k]||{byHopital:[]}).byHopital).find(x=>x.label===n); if (r && r.zone) return r.zone; } return ''; };
+  names.forEach(n=>{ t += `<tr><td>${n}</td><td>${zoneOf(n)}</td><td>${cell('usagers',n)}</td><td>${cell('personnel',n)}</td><td>${cell('communaute',n)}</td></tr>`; });
+  document.getElementById('tblHosp').innerHTML = t;
+}
+
+function renderTrend(d){
+  const tr = d.trend || [];
+  const defs = [['usagers','Usagers (CS)','#0f4c81'],['personnels','Personnel (CS)','#e08e0b'],['cogecs','COGECS','#7c3aed'],['hUsagers','Usagers (hôpital)','#1f9d55'],['hPersonnel','Personnel (hôpital)','#c0392b'],['hCommunaute','Communauté (hôpital)','#0891b2']]
+    .filter(x=>tr.some(p=>p[x[0]] && p[x[0]].count > 0));
+  const empty = document.getElementById('trendEmpty'), cv = document.getElementById('chartTrend');
+  if (charts.chartTrend){ charts.chartTrend.destroy(); charts.chartTrend = null; }
+  if (!tr.length || !defs.length){ cv.style.display = 'none'; empty.style.display = 'block'; }
+  else {
+    cv.style.display = 'block'; empty.style.display = 'none';
+    charts.chartTrend = new Chart(cv.getContext('2d'), {type:'line', data:{labels:tr.map(p=>p.label), datasets: defs.map(x=>({label:x[1], data:tr.map(p=>p[x[0]].avgScore), borderColor:x[2], backgroundColor:x[2], tension:.25, spanGaps:true}))},
+      options:{responsive:true, interaction:{mode:'index', intersect:false}, scales:{y:{beginAtZero:true, max:100, title:{display:true,text:'Satisfaction (%)'}}}}});
+  }
+  let t = '<tr><th>Période</th>' + defs.map(x=>`<th>${x[1]}</th>`).join('') + '</tr>';
+  tr.forEach(p=>{ t += `<tr><td>${p.label}</td>` + defs.map(x=>{ const v = p[x[0]]; return `<td>${v.count ? v.count + ' · ' + (v.avgScore!==null ? v.avgScore + '%' : '–') : '–'}</td>`; }).join('') + '</tr>'; });
+  document.getElementById('tblTrend').innerHTML = defs.length ? t : '';
+}
+
+function renderPeriodesTable(d){
+  if ((acct.level||'') !== 'admin') return;
+  const ps = d.periods || [];
+  let t = '<tr><th>Nom</th><th>Début</th><th>Fin</th><th></th></tr>';
+  ps.forEach(p=>{ t += `<tr><td>${p.label}</td><td>${p.start}</td><td>${p.end}</td><td><button class="btn dng" onclick="delPeriod('${p.id}')">Supprimer</button></td></tr>`; });
+  if (!ps.length) t += '<tr><td colspan="4" class="emptyNote">Aucune période définie : toutes les données sont cumulées.</td></tr>';
+  document.getElementById('tblPeriodes').innerHTML = t;
+}
+function pMsg(m){ document.getElementById('pMsg').textContent = m; }
+function addPeriod(){
+  const label = document.getElementById('pLabel').value.trim(), start = document.getElementById('pStart').value, end = document.getElementById('pEnd').value;
+  pMsg('Enregistrement…');
+  callApi('savePeriod', {token: tok, period: {label, start, end}}, '').then(r=>{
+    if (!r || !r.ok){ pMsg('❌ ' + ((r && r.error) || 'Échec')); return; }
+    pMsg('✅ Période ajoutée.'); document.getElementById('pLabel').value = '';
+    loadData(false);
+  }).catch(e=>pMsg('❌ ' + (e.message||'Erreur')));
+}
+function delPeriod(id){
+  if (!confirm('Supprimer cette période ? Les réponses ne sont pas supprimées.')) return;
+  callApi('deletePeriod', {token: tok, id}, '').then(r=>{ if (r && r.ok){ if (currentPeriod === id) currentPeriod = 'toutes'; loadData(false); } else pMsg('❌ ' + ((r && r.error)||'Échec')); }).catch(e=>pMsg('❌ ' + (e.message||'Erreur')));
+}
+function quickPeriods(kind){
+  const y = parseInt(document.getElementById('pYear').value, 10);
+  if (!y || y < 2000 || y > 2100){ pMsg('Année invalide.'); return; }
+  const p2 = n=>String(n).padStart(2,'0');
+  const last = (yy,m)=>new Date(yy, m, 0).getDate();
+  let list = [];
+  if (kind === 'annee') list = [[`Année ${y}`, `${y}-01-01`, `${y}-12-31`]];
+  else if (kind === 'semestres') list = [[`Semestre 1 - ${y}`, `${y}-01-01`, `${y}-06-30`], [`Semestre 2 - ${y}`, `${y}-07-01`, `${y}-12-31`]];
+  else for (let q=0;q<4;q++){ const m1 = q*3+1, m2 = q*3+3; list.push([`Trimestre ${q+1} - ${y}`, `${y}-${p2(m1)}-01`, `${y}-${p2(m2)}-${p2(last(y,m2))}`]); }
+  pMsg('Création…');
+  const existing = new Set((lastData && lastData.periods || []).map(p=>p.label.toLowerCase()));
+  let i = 0, made = 0;
+  (function next(){
+    if (i >= list.length){ pMsg(`✅ ${made} période(s) créée(s).`); loadData(false); return; }
+    const [label,start,end] = list[i++];
+    if (existing.has(label.toLowerCase())){ next(); return; }
+    callApi('savePeriod', {token: tok, period: {label, start, end}}, '').then(r=>{ if (r && r.ok) made++; next(); }).catch(()=>next());
+  })();
+}
+
 function renderData(d){
   if (!d || !d.ok){ document.getElementById('lastUpdate').textContent = 'Erreur : ' + (d && d.error || 'inconnue'); return; }
   lastData = d;
 
+  renderPeriodSelect(d);
+  document.getElementById('kpiHU').textContent = d.counts.hopitalUsagers || 0;
+  document.getElementById('kpiHP').textContent = d.counts.hopitalPersonnel || 0;
+  document.getElementById('kpiHC').textContent = d.counts.hopitalCommunaute || 0;
   document.getElementById('kpiUsagers').textContent = d.counts.usagers;
   document.getElementById('kpiPersonnels').textContent = d.counts.personnels;
   document.getElementById('kpiCogecs').textContent = d.counts.cogecs;
@@ -369,6 +611,9 @@ function renderData(d){
 
   populateCommuneSelect(d.communeReport);
   renderCommuneView();
+  renderHospitalAll(d);
+  renderTrend(d);
+  renderPeriodesTable(d);
 }
 </script>
 </body>

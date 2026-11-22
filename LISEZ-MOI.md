@@ -5,7 +5,7 @@
 Après un redéploiement, les appareils qui avaient une adresse corrigée à la main depuis la page Administration reviennent automatiquement à cette adresse.
 
 1. **Apps Script** : remplacez tout le contenu de `Code.gs`, enregistrez, déployez une **nouvelle version**, puis exécutez `setupComptesEtQrTokens` (crée la feuille `CodesAcces`) et `setupFeuillesHopitaux` (crée les 3 feuilles hôpital). Si une feuille `ACTEURS_COM_HOPITAL` existe, supprimez-la : elle n'est plus utilisée. Ne rééxécutez pas `effacerMotsDePasse` si déjà fait.
-2. **GitHub** : déposez à la racine tous les fichiers sauf `Code.gs` et `LISEZ-MOI.md`, puis attendez 1-2 min (le cache `sat-v6` se met à jour tout seul).
+2. **GitHub** : déposez à la racine tous les fichiers sauf `Code.gs` et `LISEZ-MOI.md`, puis attendez 1-2 min (le cache `sat-v7` se met à jour tout seul).
 3. **Utilisation** : l'accueil propose *Collecter des données* (Zone sanitaire / Hôpital) et *Administration*.
 4. **Codes** : `AdminQR.html` (connexion admin, depuis téléphone ou tablette) permet de créer un code général ou un code par zone sanitaire / par hôpital, de le partager, imprimer, changer, désactiver ou supprimer.
 5. Le personnel (CS et hôpital) n'a jamais besoin de code. Un enquêteur saisit son code une seule fois par niveau.
@@ -24,3 +24,16 @@ Dans `AdminQR.html` (connecté en administrateur), la section **Liens directs po
 
 ## Enregistrement et synchronisation automatique
 Dans chaque formulaire, « Enregistrer la réponse » envoie directement les données au serveur. Hors connexion (ou si le serveur ne répond pas), la réponse est conservée sur l'appareil, puis envoyée automatiquement : dès le retour de la connexion et par nouvelle tentative toutes les 30 secondes tant qu'il reste des réponses en attente. Chaque réponse porte un identifiant unique (anti-doublon côté serveur) et une réponse ajoutée pendant une synchronisation ne peut plus être perdue.
+
+## Tableau de bord par compte, hôpitaux et périodes (`AdminDashboard.html`)
+**Qui voit quoi** (compte dans la feuille `Comptes`) :
+- `admin`, `national`, `superviseur` : toutes les données (centres de santé et hôpitaux), sur toutes les années.
+- `departement` / `zone` : les données de leur département ou de leur zone sanitaire, y compris les hôpitaux de cette zone.
+- `commune` : les données de leur commune (centres de santé).
+- `hopital` (manager d'hôpital) : uniquement son hôpital. Dans la colonne **Commune** de la feuille `Comptes`, écrire le nom de l'hôpital tel qu'il apparaît dans le formulaire hôpital (ex. `HZ Kandi`). Les accents et majuscules sont ignorés.
+
+**Périodes** : l'administrateur définit les périodes dans l'onglet **⚙️ Périodes** du tableau de bord (année, 2 semestres, 4 trimestres en un clic, ou dates libres, sur plusieurs années). La feuille `Periodes` est créée automatiquement. Chaque utilisateur choisit la période en haut de son tableau de bord ou « Toutes les périodes ». À l'ouverture, la période en cours est choisie automatiquement. L'onglet **📈 Évolution** compare toutes les périodes pour revenir en arrière.
+
+**Rattachement d'une réponse à une période** : par sa date d'envoi. Une colonne `DateEnvoi` est ajoutée automatiquement à l'extrême droite de chaque feuille de réponses à la première réponse reçue après redéploiement. Les anciennes réponses utilisent leur date `today` (centres de santé) ; celles des feuilles hôpital sans date apparaissent dans « Sans date » (visibles en cumul).
+
+**Satisfaction des hôpitaux** : calculée directement à partir des réponses (pourcentage de 0 à 100 par rubrique, moyenne des réponses notées). « Oui » = 1, « Non » = 0 ; Excellent, Bon, Passable, Mauvais ; Très satisfait, etc. répartis de 1 à 0 ; « Ne sait pas » et « Non concerné » sont ignorés. Pour les questions où « Oui » est négatif (sollicitation de cadeaux, difficultés, etc.), le score est inversé. Le barème est dans `HOSP_SCALES` et `HOSP_CFG` de `Code.gs`.

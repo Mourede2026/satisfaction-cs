@@ -39,7 +39,10 @@ function doPost(e) {
     else if (action === "saveAccessCode") out = handleSaveAccessCode(d.token, d.level, d.name, d.code);
     else if (action === "setAccessCodeActive") out = handleSetAccessCodeActive(d.token, d.level, d.name, d.active);
     else if (action === "deleteAccessCode") out = handleDeleteAccessCode(d.token, d.level, d.name);
-    else if (action === "getDashboardData") out = getDashboardData(d.token);
+    else if (action === "getDashboardData") out = getDashboardData(d.token, d.filter);
+    else if (action === "listPeriods") out = handleListPeriods(d.token);
+    else if (action === "savePeriod") out = handleSavePeriod(d.token, d.period);
+    else if (action === "deletePeriod") out = handleDeletePeriod(d.token, d.id);
     else if (action === "accountLogin") out = handleAccountLogin(d.username, body.password);
     else if (action === "changePassword") out = handleChangePassword(d.token, body.password, d.newPassword);
     else if (action === "changeUsername") out = handleChangeUsername(d.token, body.password, d.newUsername);
@@ -80,6 +83,12 @@ function appendRecord_(sheetName, data, keyColumnName) {
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
     if (!sheet) throw new Error("Feuille introuvable: " + sheetName);
     var hm = buildHeaderMap_(sheet), keyCol = hm.map[keyColumnName];
+    if (!hm.map[DATE_COLUMN]) {
+      sheet.getRange(1, hm.lastCol + 1).setValue(DATE_COLUMN);
+      try { sheet.getRange(2, hm.lastCol + 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('@'); } catch (e) {}
+      hm = buildHeaderMap_(sheet);
+    }
+    data[DATE_COLUMN] = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
     if (!keyCol) throw new Error("Colonne clé '" + keyColumnName + "' introuvable dans " + sheetName);
     var row = getNextRow_(sheet, keyCol), rowValues = new Array(hm.lastCol).fill("");
     for (var key in data) { if (data.hasOwnProperty(key) && hm.map[key]) rowValues[hm.map[key] - 1] = data[key]; }
@@ -195,13 +204,14 @@ function computeCategoryScores_(tSheet, categories, nRaw) {
   return out;
 }
 /** Rapport générique par clé (commune / structure / enquêteur). */
-function aggReport_(sheetName, tName, cats, keyHeader, withDemo, withCommune) {
+function aggReport_(sheetName, tName, cats, keyHeader, withDemo, withCommune, mask) {
   var ss = SpreadsheetApp.getActiveSpreadsheet(), sheet = ss.getSheetByName(sheetName), tSheet = ss.getSheetByName(tName);
   var hm = buildHeaderMap_(sheet).map, keys = readColumn_(sheet, hm, keyHeader), n = keys.length;
   var cs = computeCategoryScores_(tSheet, cats, n), names = cats.map(function (c) { return c.name; });
   var ages = withDemo ? readColumn_(sheet, hm, "Âge") : [], sexes = withDemo ? readColumn_(sheet, hm, "Sexe") : [];
   var coms = withCommune ? readColumn_(sheet, hm, "Commune") : [], by = {};
   for (var i = 0; i < n; i++) {
+    if (mask && !mask[i]) continue;
     var k = keys[i];
     if (k === "" || k === null || k === undefined) continue;
     k = k.toString();
@@ -225,9 +235,9 @@ function aggReport_(sheetName, tName, cats, keyHeader, withDemo, withCommune) {
   }
   return { categories: names, res: res };
 }
-function buildCommuneReport_(s, t, c) { var r = aggReport_(s, t, c, "Commune", true, false); return { categories: r.categories, byCommune: r.res }; }
-function buildStructureReport_(s, t, c) { var r = aggReport_(s, t, c, "Structure", false, true); return { categories: r.categories, byStructure: r.res }; }
-function buildEnqueteurReport_(s, t, c) { var r = aggReport_(s, t, c, "Identification de l'enquêteur", false, false); return { categories: r.categories, byEnqueteur: r.res }; }
+function buildCommuneReport_(s, t, c, mk) { var r = aggReport_(s, t, c, "Commune", true, false, mk); return { categories: r.categories, byCommune: r.res }; }
+function buildStructureReport_(s, t, c, mk) { var r = aggReport_(s, t, c, "Structure", false, true, mk); return { categories: r.categories, byStructure: r.res }; }
+function buildEnqueteurReport_(s, t, c, mk) { var r = aggReport_(s, t, c, "Identification de l'enquêteur", false, false, mk); return { categories: r.categories, byEnqueteur: r.res }; }
 
 function getEnqueteurPositions_() {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_USAGERS);
@@ -247,13 +257,19 @@ function getEnqueteurPositions_() {
   return byDay;
 }
 
-/** Données du tableau de bord : réservé aux comptes connectés (jeton de session). */
-function getDashboardData(sessionToken) {
+/** Données du tableau de bord : réservé aux comptes connectés. filter.periode = id de période (ou « toutes »). */
+function getDashboardData(sessionToken, filter) {
+  filter = filter || {};
   var session = sessionToken ? findSession_(sessionToken) : null, acc = session ? findAccountRow_(session.username) : null;
   var account = acc ? accountPublicView_(acc.data) : null;
   if (!account || !account.active) return { ok: false, error: "Authentification requise (connectez-vous avec votre compte)." };
   var errors = [];
   function safe_(label, fn, fb) { try { return fn(); } catch (e) { errors.push(label + " : " + e.message); return fb; } }
+  var periods = safe_("periodes", periodsList_, []), sel = null;
+  if (filter.periode === 'auto') {
+    var today_ = day_(new Date()), started = periods.filter(function (p) { return p.start <= today_; });
+    sel = periods.filter(function (p) { return p.start <= today_ && p.end >= today_; })[0] || started[0] || null;
+  } else if (filter.periode && filter.periode !== 'toutes') periods.forEach(function (p) { if (p.id === filter.periode) sel = p; });
   var ss = SpreadsheetApp.getActiveSpreadsheet(), U = ss.getSheetByName(SHEET_USAGERS), C = ss.getSheetByName(SHEET_COGECS), P = ss.getSheetByName(SHEET_PERSONNELS);
   var tU = ss.getSheetByName(T_USAGERS), tC = ss.getSheetByName(T_COGECS), tP = ss.getSheetByName(T_PERSONNELS);
   var uH = U ? buildHeaderMap_(U).map : {}, cH = C ? buildHeaderMap_(C).map : {}, pH = P ? buildHeaderMap_(P).map : {};
@@ -261,16 +277,54 @@ function getDashboardData(sessionToken) {
   var uStr = safe_("uStr", function () { return readColumn_(U, uH, "Structure"); }, []);
   var uEnq = safe_("uEnq", function () { return readColumn_(U, uH, "Identification de l'enquêteur"); }, []);
   var uSc = safe_("uSc", function () { return computeRowScoresForCategories_(tU, CATEGORY_MAP.usagers, uCom.length); }, []);
+  var uDay = safe_("uDay", function () { return rowDays_(U, uH); }, []);
   var cCom = safe_("cCom", function () { return readColumn_(C, cH, "Commune"); }, []);
   var cStr = safe_("cStr", function () { return readColumn_(C, cH, "Structure"); }, []);
   var cSc = safe_("cSc", function () { return computeRowScoresForCategories_(tC, CATEGORY_MAP.cogecs, cCom.length); }, []);
+  var cDay = safe_("cDay", function () { return rowDays_(C, cH); }, []);
   var pCom = safe_("pCom", function () { return readColumn_(P, pH, "Commune"); }, []);
   var pStr = safe_("pStr", function () { return readColumn_(P, pH, "Structure"); }, []);
   var pSc = safe_("pSc", function () { return computeRowScoresForCategories_(tP, CATEGORY_MAP.personnels, pCom.length); }, []);
+  var pDay = safe_("pDay", function () { return rowDays_(P, pH); }, []);
+  // portée du compte (par ligne) puis période choisie
+  var memo = {};
+  function inScope_(c) { var k = String(c === undefined || c === null ? '' : c); if (k === '') return false; if (!(k in memo)) memo[k] = communeInScope_(k, account); return memo[k]; }
+  function scopeMask_(com) { return com.map(inScope_); }
+  function periodMask_(sm, days) { return sm.map(function (ok, i) { return ok && inPeriod_(days[i], sel); }); }
+  function pick_(a, m) { var o = []; for (var i = 0; i < m.length; i++) if (m[i]) o.push(a[i]); return o; }
+  var sU = scopeMask_(uCom), sC = scopeMask_(cCom), sP = scopeMask_(pCom);
+  var mU = periodMask_(sU, uDay), mC = periodMask_(sC, cDay), mP = periodMask_(sP, pDay);
+  // évolution par période (toutes les périodes, dans la portée du compte)
+  function trendOf_(sm, days, sc, p, undated) {
+    var n = 0, s = 0, sn = 0;
+    for (var i = 0; i < sm.length; i++) {
+      if (!sm[i]) continue;
+      if (undated) { if (days[i]) continue; } else if (!inPeriod_(days[i], p)) continue;
+      n++; if (typeof sc[i] === 'number') { s += sc[i]; sn++; }
+    }
+    return { count: n, avgScore: sn > 0 ? clampPct_(s / sn) : null };
+  }
+  var hosp = safe_("hopitaux", function () { return hospitalData_(account, sel, periods); }, { data: {}, trend: {}, trendUndated: {}, errors: [] });
+  hosp.errors.forEach(function (e) { errors.push(e); });
+  var trend = periods.slice().sort(function (a, b) { return a.start < b.start ? -1 : a.start > b.start ? 1 : 0; }).map(function (p) {
+    var h = hosp.trend[p.id] || {};
+    return { id: p.id, label: p.label, start: p.start, end: p.end,
+      usagers: trendOf_(sU, uDay, uSc, p), personnels: trendOf_(sP, pDay, pSc, p), cogecs: trendOf_(sC, cDay, cSc, p),
+      hUsagers: h.usagers || { count: 0, avgScore: null }, hPersonnel: h.personnel || { count: 0, avgScore: null }, hCommunaute: h.communaute || { count: 0, avgScore: null } };
+  });
+  var und = { id: 'sans', label: 'Sans date', usagers: trendOf_(sU, uDay, uSc, null, true), personnels: trendOf_(sP, pDay, pSc, null, true), cogecs: trendOf_(sC, cDay, cSc, null, true),
+    hUsagers: hosp.trendUndated.usagers || { count: 0, avgScore: null }, hPersonnel: hosp.trendUndated.personnel || { count: 0, avgScore: null }, hCommunaute: hosp.trendUndated.communaute || { count: 0, avgScore: null } };
+  if (und.usagers.count + und.personnels.count + und.cogecs.count + und.hUsagers.count + und.hPersonnel.count + und.hCommunaute.count > 0) trend.push(und);
+  // données de la période choisie
+  uCom = pick_(uCom, mU); uStr = pick_(uStr, mU); uEnq = pick_(uEnq, mU); uSc = pick_(uSc, mU);
+  cCom = pick_(cCom, mC); cStr = pick_(cStr, mC); cSc = pick_(cSc, mC);
+  pCom = pick_(pCom, mP); pStr = pick_(pStr, mP); pSc = pick_(pSc, mP);
   var nz = function (a) { return a.filter(function (v) { return v !== ""; }).length; };
   var uN = nz(uCom), cN = nz(cCom), pN = nz(pCom), emptyC = { categories: [], byCommune: {} };
   var result = {
     ok: true, counts: { usagers: uN, cogecs: cN, personnels: pN, total: uN + cN + pN },
+    periods: periods, selectedPeriod: sel ? sel.id : 'toutes', trend: trend,
+    hopital: hosp.data,
     usagers: { byCommune: safe_("u.com", function () { return groupWithScore_(uCom, uSc); }, []), byStructure: safe_("u.str", function () { return groupWithScore_(uStr, uSc); }, []), byEnqueteur: safe_("u.enq", function () { return groupWithScore_(uEnq, uSc); }, []) },
     cogecs: { byCommune: safe_("c.com", function () { return groupWithScore_(cCom, cSc); }, []), byStructure: safe_("c.str", function () { return groupWithScore_(cStr, cSc); }, []) },
     personnels: { byCommune: safe_("p.com", function () { return groupWithScore_(pCom, pSc); }, []), byStructure: safe_("p.str", function () { return groupWithScore_(pStr, pSc); }, []) },
@@ -279,23 +333,28 @@ function getDashboardData(sessionToken) {
       byCommune: safe_("g.com", function () { return groupWithScore_(uCom.concat(cCom, pCom), uSc.concat(cSc, pSc)); }, [])
     },
     communeReport: {
-      usagers: safe_("cr.u", function () { return buildCommuneReport_(SHEET_USAGERS, T_USAGERS, CATEGORY_MAP.usagers); }, emptyC),
-      personnels: safe_("cr.p", function () { return buildCommuneReport_(SHEET_PERSONNELS, T_PERSONNELS, CATEGORY_MAP.personnels); }, emptyC),
-      cogecs: safe_("cr.c", function () { return buildCommuneReport_(SHEET_COGECS, T_COGECS, CATEGORY_MAP.cogecs); }, emptyC)
+      usagers: safe_("cr.u", function () { return buildCommuneReport_(SHEET_USAGERS, T_USAGERS, CATEGORY_MAP.usagers, mU); }, emptyC),
+      personnels: safe_("cr.p", function () { return buildCommuneReport_(SHEET_PERSONNELS, T_PERSONNELS, CATEGORY_MAP.personnels, mP); }, emptyC),
+      cogecs: safe_("cr.c", function () { return buildCommuneReport_(SHEET_COGECS, T_COGECS, CATEGORY_MAP.cogecs, mC); }, emptyC)
     },
     structureReport: {
-      usagers: safe_("sr.u", function () { return buildStructureReport_(SHEET_USAGERS, T_USAGERS, CATEGORY_MAP.usagers); }, { categories: [], byStructure: {} }),
-      personnels: safe_("sr.p", function () { return buildStructureReport_(SHEET_PERSONNELS, T_PERSONNELS, CATEGORY_MAP.personnels); }, { categories: [], byStructure: {} }),
-      cogecs: safe_("sr.c", function () { return buildStructureReport_(SHEET_COGECS, T_COGECS, CATEGORY_MAP.cogecs); }, { categories: [], byStructure: {} })
+      usagers: safe_("sr.u", function () { return buildStructureReport_(SHEET_USAGERS, T_USAGERS, CATEGORY_MAP.usagers, mU); }, { categories: [], byStructure: {} }),
+      personnels: safe_("sr.p", function () { return buildStructureReport_(SHEET_PERSONNELS, T_PERSONNELS, CATEGORY_MAP.personnels, mP); }, { categories: [], byStructure: {} }),
+      cogecs: safe_("sr.c", function () { return buildStructureReport_(SHEET_COGECS, T_COGECS, CATEGORY_MAP.cogecs, mC); }, { categories: [], byStructure: {} })
     },
     enqueteurReport: {
-      usagers: safe_("er.u", function () { return buildEnqueteurReport_(SHEET_USAGERS, T_USAGERS, CATEGORY_MAP.usagers); }, { categories: [], byEnqueteur: {} }),
-      cogecs: safe_("er.c", function () { return buildEnqueteurReport_(SHEET_COGECS, T_COGECS, CATEGORY_MAP.cogecs); }, { categories: [], byEnqueteur: {} })
+      usagers: safe_("er.u", function () { return buildEnqueteurReport_(SHEET_USAGERS, T_USAGERS, CATEGORY_MAP.usagers, mU); }, { categories: [], byEnqueteur: {} }),
+      cogecs: safe_("er.c", function () { return buildEnqueteurReport_(SHEET_COGECS, T_COGECS, CATEGORY_MAP.cogecs, mC); }, { categories: [], byEnqueteur: {} })
     },
     gpsByDay: safe_("gps", function () { return getEnqueteurPositions_(); }, {}),
     errors: errors, generatedAt: new Date().toISOString(), account: account
   };
-  return applyScopeToResult_(result, account);
+  var out = applyScopeToResult_(result, account);
+  var hc = out.hopital || {};
+  out.counts.hopitalUsagers = (hc.usagers || {}).count || 0; out.counts.hopitalPersonnel = (hc.personnel || {}).count || 0; out.counts.hopitalCommunaute = (hc.communaute || {}).count || 0;
+  out.counts.hopital = out.counts.hopitalUsagers + out.counts.hopitalPersonnel + out.counts.hopitalCommunaute;
+  out.counts.total = out.counts.usagers + out.counts.personnels + out.counts.cogecs + out.counts.hopital;
+  return out;
 }
 
 /* ---------- Comptes, sessions ---------- */
@@ -646,4 +705,163 @@ function reinitialiserMotDePasseAdmin() {
   if (!f) sh.appendRow(['admin', sha256Hex_('admin:' + pwd), 'admin', '', '', '', 'Administrateur', '', 'OUI']);
   else { sh.getRange(f.row, 2).setValue(sha256Hex_('admin:' + pwd)); sh.getRange(f.row, 3).setValue('admin'); sh.getRange(f.row, 9).setValue('OUI'); }
   Logger.log('Identifiant : admin — Nouveau mot de passe : ' + pwd);
+}
+
+/* ====================================================================
+ * PÉRIODES DE COLLECTE, DONNÉES HÔPITAUX, ÉVOLUTION
+ * ==================================================================== */
+var PERIODS_SHEET_NAME = 'Periodes', PERIODS_HEADERS = ['Id', 'Libellé', 'Début', 'Fin', 'Actif'];
+var DATE_COLUMN = 'DateEnvoi';
+var HOSP_CFG = {"usagers":{"sheet":SHEET_USAGERS_H,"hosp":"fs","zone":"zone","dept":"dept","cats":[{"n":"Accessibilité et orientation","items":[{"c":"Comment_avez_vous_tr_acc_der_l_h_pital_","l":"yh7ka41"},{"c":"Avez_vous_rencontr_re_v_hicule_ou_moto_","l":"vv2mg93"},{"c":"L_acc_s_aux_b_timent_mobilit_r_duite_","l":"do9ex82"},{"c":"Une_fois_l_int_rie_neaux_d_orientation_","l":"fx3yw25"},{"c":"La_propret_et_le_co_ils_au_rendez_vous_","l":"lr9zr25"},{"c":"Avez_vous_des_diffic_au_sein_de_l_h_pital","l":"tt7uf73","i":1}]},{"n":"Accueil et temps d'attente","items":[{"c":"A1","l":"tt3jk83"},{"c":"A2","l":"xc4ty77"},{"c":"A3","l":"qg8km11"},{"c":"A3a","l":"xc4ty77"},{"c":"A4","l":"qg8km11"},{"c":"A4a","l":"xc4ty77"},{"c":"A5","l":"or5hc40"},{"c":"A5a","l":"xc4ty77"},{"c":"A6","l":"qg8km11"},{"c":"A6a","l":"xc4ty77"}]},{"n":"Consultation, écoute et soins","items":[{"c":"C1","l":"lr1fn01"},{"c":"C2","l":"aq4ny65"},{"c":"D1","l":"et8pq06"},{"c":"D2","l":"xe8kz81","i":1},{"c":"E1","l":"xe8kz81"},{"c":"B1","l":"ft6fb55"},{"c":"B2","l":"xa3sf70"},{"c":"B3","l":"hj0ae68"},{"c":"E2","l":"nb71g36"},{"c":"E3","l":"lr1fn01"},{"c":"E4","l":"zj4kh59"},{"c":"A7","l":"hn23q50"},{"c":"A8","l":"el7ir34","i":1},{"c":"C4","l":"qm6xj64"},{"c":"C5","l":"to23d11"}]},{"n":"Médicaments et coûts","items":[{"c":"G1","l":"fr7fs28"},{"c":"G2","l":"fr7fs28"},{"c":"F1","l":"vj2kq12"},{"c":"F2","l":"vj2kq12"},{"c":"F3","l":"vj2kq12"},{"c":"C3","l":"yg8fo88"}]},{"n":"Droits du patient et plaintes","items":[{"c":"Avant_qu_une_d_cisio_vous_t_consult_e_","l":"dm08z48"},{"c":"Avez_vous_pu_exprime_les_soins_propos_s_","l":"oi06h09"},{"c":"Si_oui_votre_d_cisi_ression_ni_jugement_","l":"ac7oc61"},{"c":"Lors_de_votre_prise_en_charge_","l":"ft8yj05"},{"c":"Si_oui_cette_person_essionnels_de_sant_","l":"oe7lp13"},{"c":"Lors_de_votre_prise_en_charge","l":"oy6qx24"},{"c":"Lors_de_votre_prise_en_charge__001","l":"vn2fi03"}]},{"n":"Hygiène et conditions de séjour","items":[{"c":"H1","l":"ky86z20"},{"c":"H2","l":"wc9ng48"},{"c":"H3","l":"bm4ts82"},{"c":"H4","l":"zo1if20"},{"c":"H5","l":"my43j02"},{"c":"H6","l":"to4qf61"},{"c":"H7","l":"tg9gh34"},{"c":"C6","l":"bm2eu92"},{"c":"H8","l":"kx3na73"}]},{"n":"Pratiques parallèles et rançonnement","items":[{"c":"AA1","l":"si4fc54","i":1},{"c":"AA2","l":"st7nh97","i":1},{"c":"AA3","l":"uf3af06","i":1},{"c":"AA4","l":"nd9id61"}]},{"n":"Fidélité et recommandation","items":[{"c":"I1","l":"di0gd12"},{"c":"I2","l":"co65e31"}]}]},"personnel":{"sheet":SHEET_PERSONNELS_H,"hosp":"fs","zone":"zs","dept":"dept","cats":[{"n":"Conditions et organisation du travail","items":[{"c":"Q1","l":"dt1jh61"},{"c":"Q2","l":"au1wl40"},{"c":"Q4","l":"lc4jc27"},{"c":"Q5","l":"lz1xh46"},{"c":"Q6","l":"my0pl21"},{"c":"Q7","l":"ht7xl14"},{"c":"Q8","l":"cn08k85"},{"c":"Recevez_vous_les_inf_d_lais_raisonnables_","l":"ye6ms95"},{"c":"Q15","l":"sx8na20"},{"c":"Q17","l":"zo7fe17"},{"c":"Q18","l":"ui7si32"},{"c":"Q19","l":"fg4lo40"}]},{"n":"Droits et devoirs des patients","items":[{"c":"Avez_vous_re_u_une_f_evoirs_des_patients_","l":"pb2zc32"},{"c":"Vous_sentez_vous_sou_evoirs_des_patients_","l":"ep8ob11"},{"c":"Avez_vous_connaissance_des_dro","l":"fs59c72"},{"c":"Ces_droits_et_devoir_votre_tablissement_","l":"kf85b90"},{"c":"Pensez_vous_que_vos_onnement_de_travail_","l":"vt7ev88"},{"c":"Avez_vous_des_difficult_s_dans","l":"ps1pl37","i":1}]},{"n":"Collègues et collaboration","items":[{"c":"Q9","l":"ll2ik06"},{"c":"Les_coll_gues_de_vot_protocoles_de_soins_","l":"yh4vk06"},{"c":"Les_coll_gues_assure_esoins_des_patients_","l":"wu8sg46"},{"c":"Les_coll_gues_collab_ontinuit_des_soins_","l":"ye5ft78"},{"c":"Q10","l":"dn1qa13","i":1}]},{"n":"Direction, gestion et perspectives","items":[{"c":"Q11","l":"ke4iv96"},{"c":"Q12","l":"dq1ei30"},{"c":"Q13","l":"km19b24"},{"c":"Q14","l":"aq3kk41"},{"c":"Q20","l":"ie4cp00"},{"c":"Q22","l":"ak5xg12"}]},{"n":"Climat et motivation","items":[{"c":"Q3","l":"fj5iq62"},{"c":"Q16","l":"eg9su19"},{"c":"Q21","l":"nv6jq01"}]}]},"communaute":{"sheet":SHEET_COMMUNAUTE_H,"hosp":"Formation_Sanitaire","zone":"zone","dept":"dept","cats":[{"n":"Accessibilité de l'hôpital","items":[{"c":"Comment_avez_vous_tr_acc_der_l_h_pital_","l":"yh7ka41"},{"c":"Avez_vous_rencontr_re_v_hicule_ou_moto_","l":"vv2mg93"},{"c":"L_acc_s_aux_b_timent_mobilit_r_duite_","l":"do9ex82"},{"c":"Une_fois_l_int_rie_neaux_d_orientation_","l":"fx3yw25"},{"c":"La_propret_et_le_co_ils_au_rendez_vous_","l":"lr9zr25"},{"c":"Avez_vous_des_suggestions_part","l":"my17e38"}]},{"n":"Accueil","items":[{"c":"Comment_jugez_vous_e_accueil_au_portail_","l":"gc9bj55"},{"c":"Comment_jugez_vous_e_l_dans_les_services_","l":"rr4vi05"},{"c":"Comment_jugez_vous_e_au_service_de_sortie","l":"kr3pn80"},{"c":"Comment_trouvez_vous_les_dirigeants_","l":"yl4bj31"}]},{"n":"Prise en charge","items":[{"c":"Comment_appr_ciez_vo_es_agents_examiner","l":"kp2xf35"},{"c":"Comment_appr_ciez_vo_diguer_de_bons_soins","l":"he7qz74"},{"c":"Comment_appr_ciez_vo_e_bonne_prescription","l":"ll4vy48"},{"c":"Comment_appr_ciez_vo_niquer_sur_les_actes","l":"yw8ak40"},{"c":"Pensez_vous_que_les_la_prise_en_charge_","l":"hz7sr16"},{"c":"Comment_trouvez_vous_rapport_avec_le_mal","l":"dg0fr95"},{"c":"Pensez_vous_que_les_ous_servir_au_besoin","l":"go5va85"},{"c":"Les_m_dicaments_pres_ibles_dans_le_centre","l":"lu3ug49"},{"c":"Les_m_dicaments_non_pharmacies_proches_","l":"pc5hv66"},{"c":"Comment_trouvez_vous_ifs_des_m_dicaments_","l":"pr5ud52"},{"c":"Comment_trouvez_vous_ents_hospitalisation","l":"ga1tt79"}]},{"n":"Aisance de séjour","items":[{"c":"Comment_trouvez_vous_la_cour_de_l_h_pital","l":"qv3pt77"},{"c":"Comment_trouvez_vous_alle_de_consultation","l":"uw5ur14"},{"c":"Comment_trouvez_vous_les_toilettes","l":"qf8kr56"},{"c":"Comment_trouvez_vous_la_buanderie","l":"sn14p46"},{"c":"Pensez_vous_que_les_onn_es_sur_les_soins","l":"pw6gg98"},{"c":"Pensez_vous_qu_on_a_est_pas_souvent_seul","l":"wx0vw58"},{"c":"Avez_vous_acc_s_l_eau","l":"ca3ve40"}]},{"n":"Pratiques parallèles","items":[{"c":"Vous_a_t_on_une_fois_des_soins_domicile","l":"tw9po34"},{"c":"Vous_est_il_jamais_a_r_des_agents_de_sant","l":"em0ev27"},{"c":"Des_agents_vous_ont_eux_directement_vers","l":"hg9ab90"}]},{"n":"Gestion administrative de l’hôpital","items":[{"c":"Pensez_vous_que_les_h_pital_g_rent_bien","l":"rg7fs81"},{"c":"Pensez_vous_que_dans_u_sein_de_l_h_pital_","l":"ny6xw05"}]}]}};
+var HOSP_SCALES = {"yh7ka41":{"Très claire":1,"Passable":0.33,"Insuffisante":0.33,"Inexistante":0},"vv2mg93":{"Aucune difficulté":1,"Quelques difficultés (recherche longue)":0.5,"Majeures (manque de places ou parking inadapté)":0},"do9ex82":{"Tout à fait adapté":1,"Plutôt adapté":0.67,"Peu adapté":0.33,"Pas du tout adapté":0},"fx3yw25":{"Très facilement":1,"Assez facilement":0.67,"Difficilement":0.33,"Je me suis perdu(e)":0},"lr9zr25":{"Très satisfaisant":1,"Satisfaisant":0.67,"Peu satisfaisant":0.33,"Pas du tout satisfaisant":0},"tt7uf73":{"Oui":1,"Non":0},"tt3jk83":{"Excellent":1,"Bon":0.67,"Passable":0.33,"Mauvais":0},"xc4ty77":{"Long":0.4,"Très long":0,"Acceptable":1},"qg8km11":{"Excellent":1,"Bon":0.67,"Passable":0.33,"Mauvais":0},"or5hc40":{"Excellent":1,"Bon":0.67,"Passable":0.33,"Mauvais":0},"lr1fn01":{"Très bien":1,"Bien":0.67,"Acceptable":0.5,"Mauvais":0},"aq4ny65":{"Oui, très bien":1,"Oui, bien":0.75,"Oui, passablement":0.4,"Non":0},"et8pq06":{"Correctement":1,"Passablement":0.5,"Non":0},"xe8kz81":{"Oui":1,"Non":0},"ft6fb55":{"Oui, tout ce qu'il faut":1,"Oui, un peu":0.5,"Non, rien du tout":0},"xa3sf70":{"Toujours":1,"Très souvent":0.75,"Quelques fois":0.5,"Rarement":0.25,"Jamais":0},"hj0ae68":{"Toujours":1,"Très souvent":0.75,"Quelques fois":0.5,"Rarement":0.25,"Jamais":0},"nb71g36":{"Très compétent":1,"Compétent":0.75,"Pas du tout compétent":0},"zj4kh59":{"Très satisfaisant":1,"Satisfaisant":0.67,"Peu satisfaisant":0.33,"Pas du tout satisfaisant":0},"hn23q50":{"Nous dépasse comme au marché":0,"Amicaux et serviables":1,"Ne nous considère pas":0,"Cherchent à nous encourager":1},"el7ir34":{"Très souvent":0.75,"Assez souvent":0.5,"Parfois":0.5,"Très rarement":0.1,"Jamais":0},"qm6xj64":{"Oui, promptement":1,"Oui, mais négligemment":0.4,"Non, pas du tout":0},"to23d11":{"Oui, toujours":1,"Oui, parfois":0.5,"Non, presque jamais":0},"fr7fs28":{"Oui":1,"Non":0,"Pas toujours":0.5},"vj2kq12":{"Très chers":0,"Chers":0.33,"Abordables":1},"yg8fo88":{"Oui, tout à faire":1,"En partie":0.5,"Non, pas du tout":0},"dm08z48":{"Oui":1,"Non":0},"oi06h09":{"Oui":1,"Non":0},"ac7oc61":{"Oui":1,"Non":0},"ft8yj05":{"Oui":1,"Non":0},"oe7lp13":{"Oui":1,"Non":0},"oy6qx24":{"Oui":1,"Non":0},"vn2fi03":{"Oui":1,"Non":0},"ky86z20":{"Convenable":1,"Acceptable":0.5,"Pas du tout convenable":0},"wc9ng48":{"Oui":1,"Non":0},"bm4ts82":{"Très convenable":1,"Acceptable":0.5,"Pas du tout convenable":0},"zo1if20":{"Très convenable":1,"Acceptable":0.5,"Pas du tout convenable":0},"my43j02":{"Très propres":1,"Acceptables":0.5,"Sales":0},"to4qf61":{"Très facilement":1,"Difficilement":0.33,"Pas du tout":0},"tg9gh34":{"Très convenable":1,"Acceptable":0.5,"Pas du tout convenable":0},"bm2eu92":{"Trop longue":0,"Acceptable selon le mal":1,"Trop courte":0},"kx3na73":{"Très satisfait":1,"Satisfait":0.67,"Peu satisfait":0.33,"Pas du tout satisfait":0},"si4fc54":{"Oui":1,"Non":0},"st7nh97":{"Oui":1,"Non":0},"uf3af06":{"Oui":1,"Non":0},"nd9id61":{"Oui":1,"Non":0},"di0gd12":{"Oui":1,"Non":0},"co65e31":{"Oui":1,"Non":0},"dt1jh61":{"Bonnes":1,"Acceptables":0.5,"Mauvaise":0},"au1wl40":{"Oui":1,"Non":0},"lc4jc27":{"Oui":1,"Pas tellement":0.5,"Non":0},"lz1xh46":{"Oui":1,"Pas tellement":0.5,"Non":0},"my0pl21":{"Oui":1,"Pas tellement":0.5,"Non":0},"ht7xl14":{"Oui":1,"Pas tellement":0.5,"Non":0},"cn08k85":{"Oui, toujours claires":1,"Parfois ambiguës":0.5,"Non, Souvent confuses ou contradictoires":0},"ye6ms95":{"Oui, en temps utile":1,"Parfois en retard":0.5,"Non, souvent trop tard ou pas du tout":0},"sx8na20":{"Oui":1,"Pas tellement":0.5,"Non":0},"zo7fe17":{"Oui":1,"Pas tellement":0.5,"Non":0},"ui7si32":{"Oui":1,"Pas tellement":0.5,"Non":0},"fg4lo40":{"Oui":1,"Pas tellement":0.5,"Non":0},"pb2zc32":{"Oui, de manière complète":1,"Partiellement ou de façon informelle":0.5,"Non, aucune formation ou sensibilisation reçue":0},"ep8ob11":{"Oui, pleinement soutenu":1,"Moyennement soutenu":0.5,"Non, peu ou pas soutenu":0},"fs59c72":{"Oui, clairement identifiés":1,"Partiellement connus":0.5,"Non, pas du tout connus":0},"kf85b90":{"Oui, ils sont bien expliqués":1,"Moyennement ou de façon peu claire":0.5,"Non, ils ne sont pas expliqués":0},"vt7ev88":{"Oui, dans l’ensemble":1,"Partiellement ou selon les situations":0.5,"Non, rarement ou jamais":0},"ps1pl37":{"Oui":1,"Non":0},"ll2ik06":{"Oui":1,"Pas tellement":0.5,"Non":0},"yh4vk06":{"Oui, la maîtrise est globalement très bonne":1,"Moyennement maîtrisée selon les personnes":0.5,"Non, des lacunes importantes sont observées":0},"wu8sg46":{"Oui, de manière constante":1,"Parfois, selon les situations":0.5,"Non, souvent inadaptée ou peu respectueuse":0},"ye5ft78":{"Oui, la collaboration est fluide et efficace":1,"Moyennement efficace selon les équipes":0.5,"Non, la coordination est souvent difficile":0},"dn1qa13":{"Oui":1,"Pas tellement":0.5,"Non":0},"ke4iv96":{"Oui":1,"Pas tellement":0.5,"Non":0},"dq1ei30":{"Oui":1,"Pas tellement":0.5,"Non":0},"km19b24":{"Oui":1,"Pas tellement":0.5,"Non":0},"aq3kk41":{"Oui":1,"Pas tellement":0.5,"Non":0},"ie4cp00":{"Oui":1,"Pas toujours":0.5,"Non":0},"ak5xg12":{"Oui":1,"Pas tellement":0.5,"Non":0},"fj5iq62":{"Oui":1,"Non":0},"eg9su19":{"Oui":1,"Pas tellement":0.5,"Non":0},"nv6jq01":{"Oui":1,"Pas tellement":0.5,"Non":0},"my17e38":{"Oui":1,"Non":0},"gc9bj55":{"Excellent/Bon":1,"Mauvais":0,"Passable":0.33},"rr4vi05":{"Excellent/Bon":1,"Mauvais":0,"Passable":0.33},"kr3pn80":{"Excellent/Bon":1,"Mauvais":0,"Passable":0.33},"yl4bj31":{"Accueillants":1,"Pas du tout accueillants":0},"kp2xf35":{"Très compétents/Compétents":1,"Pas du tout compétents":0},"he7qz74":{"Très compétents/Compétents":1,"Pas du tout compétents":0},"ll4vy48":{"Très compétents/Compétents":1,"Pas du tout compétents":0},"yw8ak40":{"Très compétents/Compétents":1,"Pas du tout compétents":0},"hz7sr16":{"Oui":1,"Non":0},"dg0fr95":{"Trop long/Long":0,"Raisonnable selon le mal":1,"Trop court":0},"go5va85":{"Oui":1,"Non":0},"lu3ug49":{"Tous les médicaments":1,"Quelques médicaments":0.5,"Aucun médicament":0},"pc5hv66":{"Oui":1,"Pas toujours":0.5,"Non":0},"pr5ud52":{"Très chers/Chers":0,"Abordables":1,"Pas du tout chers":1},"ga1tt79":{"Très chers/Chers":0,"Abordables":1,"Pas du tout chers":1},"qv3pt77":{"Propre":1,"Acceptable":0.5,"Salle":0},"uw5ur14":{"Propre":1,"Acceptable":0.5,"Salle":0},"qf8kr56":{"Propre":1,"Acceptable":0.5,"Salle":0},"sn14p46":{"Propre":1,"Acceptable":0.5,"Salle":0},"pw6gg98":{"Oui, tout à faire":1,"Oui, un peu":0.5,"Pas du tout":0},"wx0vw58":{"Oui":1,"Non":0},"ca3ve40":{"Facilement":1,"Difficilement":0.33,"Pas du tout":0},"tw9po34":{"Oui":1,"Non":0,"Pas directement":0.5},"em0ev27":{"Oui":1,"Non":0,"Pas directement":0.5},"hg9ab90":{"Oui":1,"Non":0,"Pas directement":0.5},"rg7fs81":{"Très bien/Bien":1,"Passable/Pas du tout":0.2},"ny6xw05":{"Oui":1,"Non":0}};
+var HOSP_KEYS = ['usagers', 'personnel', 'communaute'];
+
+/** Date « yyyy-MM-dd » d'une cellule (Date, texte ISO ou jj/mm/aaaa) ; '' si illisible. */
+function day_(v) {
+  if (v === '' || v === null || v === undefined) return '';
+  if (Object.prototype.toString.call(v) === '[object Date]') return isNaN(v.getTime()) ? '' : Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  var s = String(v).trim(), m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return m[1] + '-' + m[2] + '-' + m[3];
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) return m[3] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[1]).slice(-2);
+  return '';
+}
+/** Date de chaque ligne : DateEnvoi (posée par le serveur), sinon « today », sinon « start ». */
+function rowDays_(sheet, hm) {
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  var a = readColumn_(sheet, hm, DATE_COLUMN), b = readColumn_(sheet, hm, 'today'), c = readColumn_(sheet, hm, 'start'), n = Math.max(a.length, b.length, c.length), out = [];
+  for (var i = 0; i < n; i++) out.push(day_(a[i]) || day_(b[i]) || day_(c[i]));
+  return out;
+}
+
+function periodsSheet_() {
+  var sh = getOrCreateSheet_(PERIODS_SHEET_NAME, PERIODS_HEADERS);
+  try { sh.getRange(2, 3, Math.max(1, sh.getMaxRows() - 1), 2).setNumberFormat('@'); } catch (e) {}
+  return sh;
+}
+function periodsList_() {
+  var v = periodsSheet_().getDataRange().getValues(), out = [];
+  for (var i = 1; i < v.length; i++) {
+    if (!v[i][0] || !v[i][1]) continue;
+    var st = day_(v[i][2]), en = day_(v[i][3]);
+    if (!st || !en) continue;
+    out.push({ id: String(v[i][0]), label: String(v[i][1]), start: st, end: en, active: v[i][4] !== 'NON' });
+  }
+  out.sort(function (a, b) { return a.start < b.start ? 1 : a.start > b.start ? -1 : 0; });
+  return out;
+}
+function sessionAccountView_(token) {
+  var s = token ? findSession_(token) : null, a = s ? findAccountRow_(s.username) : null, acc = a ? accountPublicView_(a.data) : null;
+  return acc && acc.active ? acc : null;
+}
+function handleListPeriods(token) {
+  if (!sessionAccountView_(token)) return { ok: false, error: 'Session invalide ou expirée, reconnectez-vous.' };
+  return { ok: true, periods: periodsList_() };
+}
+function handleSavePeriod(token, p) {
+  var c = requireAdminSession_(token); if (!c.ok) return c;
+  p = p || {};
+  var label = String(p.label || '').trim(), st = day_(p.start), en = day_(p.end);
+  if (!label) return { ok: false, error: 'Le nom de la période est obligatoire.' };
+  if (!st || !en) return { ok: false, error: 'Dates de début et de fin obligatoires.' };
+  if (st > en) return { ok: false, error: 'La date de début doit précéder la date de fin.' };
+  var sh = periodsSheet_(), v = sh.getDataRange().getValues(), row = -1;
+  for (var i = 1; i < v.length; i++) {
+    if (p.id && String(v[i][0]) === String(p.id)) row = i + 1;
+    if (String(v[i][1]).trim().toLowerCase() === label.toLowerCase() && String(v[i][0]) !== String(p.id || '')) return { ok: false, error: 'Une période porte déjà ce nom.' };
+  }
+  if (row > 0) sh.getRange(row, 2, 1, 4).setValues([[label, st, en, 'OUI']]);
+  else sh.appendRow([Utilities.getUuid().slice(0, 8), label, st, en, 'OUI']);
+  return { ok: true, periods: periodsList_() };
+}
+function handleDeletePeriod(token, id) {
+  var c = requireAdminSession_(token); if (!c.ok) return c;
+  var sh = periodsSheet_(), v = sh.getDataRange().getValues();
+  for (var i = v.length - 1; i >= 1; i--) if (String(v[i][0]) === String(id)) sh.deleteRow(i + 1);
+  return { ok: true, periods: periodsList_() };
+}
+
+/** Texte sans accents ni ponctuation, pour comparer noms d'hôpitaux et de zones. */
+function strip_(s) {
+  var m = { 'à': 'a', 'â': 'a', 'ä': 'a', 'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e', 'î': 'i', 'ï': 'i', 'ô': 'o', 'ö': 'o', 'ù': 'u', 'û': 'u', 'ü': 'u', 'ç': 'c', 'œ': 'oe' };
+  return String(s || '').toLowerCase().replace(/[àâäéèêëîïôöùûüçœ]/g, function (c) { return m[c]; }).replace(/[^a-z0-9]+/g, ' ').trim();
+}
+function zoneKey_(s) { return strip_(s).replace(/\bzone sanitaire\b|\bzs\b/g, ' ').replace(/\s+/g, ' ').trim(); }
+/** Portée d'un compte sur une ligne d'enquête hôpital. Compte « hopital » : nom de l'hôpital dans la colonne Commune de la feuille Comptes. */
+function hospInScope_(hosp, zone, dept, account) {
+  var lvl = account.level;
+  if (lvl === 'admin' || lvl === 'national' || lvl === 'superviseur') return true;
+  if (lvl === 'hopital') return strip_(hosp) === strip_(account.commune);
+  if (lvl === 'zone') return zoneKey_(zone) !== '' && zoneKey_(zone) === zoneKey_(account.zone);
+  if (lvl === 'departement') return strip_(dept) !== '' && strip_(dept) === strip_(account.departement);
+  return false;
+}
+function inPeriod_(day, p) { return !p || (!!day && day >= p.start && day <= p.end); }
+function aggRows_(rows, p) {
+  var n = 0, s = 0, sn = 0;
+  rows.forEach(function (r) { if (!inPeriod_(r.d, p)) return; n++; if (typeof r.o === 'number') { s += r.o; sn++; } });
+  return { count: n, avgScore: sn > 0 ? clampPct_(s / sn) : null };
+}
+
+/** Enquêtes hôpitaux : score par rubrique (moyenne des réponses notées, 0 à 100 %). */
+function hospitalData_(account, sel, periods) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), out = {}, trendRows = {}, errors = [];
+  HOSP_KEYS.forEach(function (key) {
+    var cfg = HOSP_CFG[key], names = cfg.cats.map(function (c) { return c.n; });
+    var res = { count: 0, avgScore: null, categories: names, all: { count: 0, categoryScores: {} }, byHopital: [] }, rows = [];
+    try {
+      var sh = ss.getSheetByName(cfg.sheet);
+      if (sh && sh.getLastRow() >= 2) {
+        var v = sh.getDataRange().getValues(), ci = {};
+        v[0].forEach(function (h, i) { var t = String(h || '').trim(); if (t && ci[t] === undefined) ci[t] = i; });
+        var iH = ci[cfg.hosp], iZ = ci[cfg.zone], iD = ci[cfg.dept], i1 = ci[DATE_COLUMN], i2 = ci['today'], i3 = ci['start'];
+        if (iH !== undefined) for (var r = 1; r < v.length; r++) {
+          var row = v[r], hosp = String(row[iH] || '').trim();
+          if (!hosp) continue;
+          var zone = iZ === undefined ? '' : String(row[iZ] || '').trim(), dept = iD === undefined ? '' : String(row[iD] || '').trim();
+          if (!hospInScope_(hosp, zone, dept, account)) continue;
+          var cs = {}, tot = 0, tn = 0;
+          cfg.cats.forEach(function (cat) {
+            var s = 0, n = 0;
+            cat.items.forEach(function (it) {
+              var k = ci[it.c]; if (k === undefined) return;
+              var lab = String(row[k] === undefined || row[k] === null ? '' : row[k]).trim(), m = HOSP_SCALES[it.l];
+              if (!lab || !m || m[lab] === undefined) return;
+              var sc = m[lab]; if (it.i) sc = 1 - sc;
+              s += sc; n++;
+            });
+            cs[cat.n] = n > 0 ? s / n : null;
+            tot += s; tn += n;
+          });
+          rows.push({ h: hosp, z: zone, d: (i1 !== undefined ? day_(row[i1]) : '') || (i2 !== undefined ? day_(row[i2]) : '') || (i3 !== undefined ? day_(row[i3]) : ''), cs: cs, o: tn > 0 ? tot / tn : null });
+        }
+      }
+    } catch (e) { errors.push(key + ' : ' + e.message); }
+    trendRows[key] = rows;
+    var sel_ = rows.filter(function (r) { return inPeriod_(r.d, sel); }), by = {};
+    function add(o, r) {
+      o.count++;
+      names.forEach(function (n) { if (typeof r.cs[n] === 'number') { o.sum[n] = (o.sum[n] || 0) + r.cs[n]; o.n[n] = (o.n[n] || 0) + 1; } });
+      if (typeof r.o === 'number') { o.os += r.o; o.on++; }
+    }
+    function fin(o) {
+      var pct = {}; names.forEach(function (n) { pct[n] = o.n[n] > 0 ? clampPct_(o.sum[n] / o.n[n]) : null; });
+      return { count: o.count, avgScore: o.on > 0 ? clampPct_(o.os / o.on) : null, categoryScores: pct };
+    }
+    var all = { count: 0, sum: {}, n: {}, os: 0, on: 0 };
+    sel_.forEach(function (r) {
+      add(all, r);
+      if (!by[r.h]) by[r.h] = { o: { count: 0, sum: {}, n: {}, os: 0, on: 0 }, z: r.z };
+      add(by[r.h].o, r);
+    });
+    var fa = fin(all);
+    res.count = fa.count; res.avgScore = fa.avgScore; res.all = { count: fa.count, categoryScores: fa.categoryScores };
+    Object.keys(by).forEach(function (h) { var f = fin(by[h].o); res.byHopital.push({ label: h, zone: by[h].z, count: f.count, avgScore: f.avgScore, categoryScores: f.categoryScores }); });
+    res.byHopital.sort(function (a, b) { return b.count - a.count; });
+    out[key] = res;
+  });
+  var trend = {};
+  periods.forEach(function (p) { trend[p.id] = {}; HOSP_KEYS.forEach(function (k) { trend[p.id][k] = aggRows_(trendRows[k], p); }); });
+  var und = {}; HOSP_KEYS.forEach(function (k) { und[k] = aggRows_(trendRows[k].filter(function (r) { return !r.d; }), null); });
+  return { data: out, trend: trend, trendUndated: und, errors: errors };
 }
