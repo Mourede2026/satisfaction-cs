@@ -5,7 +5,7 @@
 Après un redéploiement, les appareils qui avaient une adresse corrigée à la main depuis la page Administration reviennent automatiquement à cette adresse.
 
 1. **Apps Script** : remplacez tout le contenu de `Code.gs`, enregistrez, déployez une **nouvelle version**. Si c'est une première installation, exécutez aussi `setupComptesEtQrTokens` (crée la feuille `CodesAcces`) et `setupFeuillesHopitaux` (crée les 3 feuilles hôpital). Rien à exécuter pour les activités : la feuille `Activites` se crée toute seule. Si une feuille `ACTEURS_COM_HOPITAL` existe, supprimez-la : elle n'est plus utilisée. Ne rééxécutez pas `effacerMotsDePasse` si déjà fait.
-2. **GitHub** : déposez à la racine tous les fichiers sauf `Code.gs` et `LISEZ-MOI.md`, puis attendez 1-2 min (le cache `sat-v9` se met à jour tout seul).
+2. **GitHub** : déposez à la racine tous les fichiers sauf `Code.gs` et `LISEZ-MOI.md`, puis attendez 1-2 min (le cache `sat-v10` se met à jour tout seul).
 3. **Utilisation** : l'accueil propose *Collecter des données* (Zone sanitaire / Hôpital) et *Administration*.
 4. **Codes** : `AdminQR.html` (connexion admin, depuis téléphone ou tablette) permet de créer un code général ou un code par zone sanitaire / par hôpital, de le partager, imprimer, changer, désactiver ou supprimer.
 5. Le personnel (CS et hôpital) n'a jamais besoin de code. Un enquêteur saisit son code une seule fois par niveau.
@@ -53,3 +53,16 @@ Dans chaque formulaire, « Enregistrer la réponse » envoie directement les don
 **Personnel** (`AdminQR.html` → « Personnel — un QR par formulaire ») : deux QR séparés, un pour le personnel des **centres de santé (zone sanitaire)** et un pour le personnel des **hôpitaux**. Chacun se télécharge en image PNG haute qualité, se partage ou s'imprime ; le lien correspondant se copie aussi. Le scan (ou le lien) ouvre directement le formulaire, sans code ni identifiant.
 
 **Gestionnaires** (« Gestionnaires — un lien par gestionnaire ») : un lien par compte actif (hors administrateur), de la forme `AdminDashboard.html?u=identifiant`. Le gestionnaire ouvre le lien, son identifiant est déjà rempli, il saisit son mot de passe et accède à son tableau de bord. Le mot de passe n'apparaît jamais dans le lien. Un QR du lien est disponible (à afficher, télécharger en image ou imprimer).
+
+## Factures des enquêteurs et attestations de bonne fin d'exécution (v10)
+**Installation (une seule fois)** : dans Apps Script, remplacez `Code.gs`, puis exécutez la fonction **`setupEnqueteursEtFactures`** et acceptez l'autorisation d'accès à Google Drive (les PDF sont rangés dans un dossier « Factures enquêteurs - Satisfaction » créé automatiquement). Déployez ensuite une **nouvelle version**. Trois feuilles se créent : `Enqueteurs`, `Factures`, `AttestParams`. Dans GitHub, ajoutez aussi le dossier `att/` (polices, logo, tampon) et les fichiers `Facture.html`, `AdminAttestations.html`, `attestation.js`.
+
+**Pour l'enquêteur** (`Facture.html`, carte **🧾 Facture et attestation** de l'accueil) : il identifie son activité (QR ou code ; l'activité peut être terminée depuis moins de 60 jours), saisit **nom** et **prénom**, ajoute une ou plusieurs factures normalisées en **PDF** (5 Mo maximum chacune) et envoie. Il peut revenir ajouter d'autres factures : elles se rattachent à la même personne (même nom et prénom, même activité).
+
+**Pour l'administrateur principal seulement** (`AdminAttestations.html`, lien « 🎓 Attestations » dans Administration ; compte de niveau `admin`) :
+1. Choisir l'activité (période de collecte) : la liste de tous les enquêteurs s'affiche avec leurs factures (bouton *Ouvrir*), modification possible du nom/prénom, suppression.
+2. **Paramètres de l'attestation** (par activité) : zone sanitaire ou hôpital affiché, dates de collecte, année, lieu et **date de signature**. Les champs sont préremplis depuis l'activité ; la date de signature est obligatoire.
+3. Pour chaque enquêteur, un **bouton bascule « Attestation validée »** (ou *Valider tous ceux qui ont déposé une facture*).
+4. Pour les seuls enquêteurs validés : **⬇️ Attestation PDF** (une personne) ou **ZIP** (toutes les attestations validées de l'activité).
+
+**Le PDF** : une page A4 paysage fidèle au canevas (cadre, logo, tampon et signature), type *Zone Sanitaire* ou *Hôpital* selon l'activité. Le contenu est aplati en image et le fichier est protégé (impression autorisée, modification et copie interdites). La génération se fait dans le navigateur (connexion Internet requise pour charger jsPDF et JSZip).

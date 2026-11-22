@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Facture et attestation - Enquêteur</title>
+<style>
+ :root{--brand:#0f4c81}
+ *{box-sizing:border-box}
+ body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f4f6f8;margin:0;padding:20px;color:#1f2937}
+ main{max-width:520px;margin:0 auto}
+ .box{background:#fff;border-radius:14px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin:0 0 14px}
+ h1{font-size:1.2rem;color:var(--brand);margin:0 0 6px}
+ p{color:#6b7280;font-size:.9rem;margin:0 0 10px}
+ label{display:block;font-size:.8rem;color:#6b7280;margin-top:12px}
+ input[type=text],input[type=search]{width:100%;padding:12px;border:1px solid #dfe4ea;border-radius:10px;font-size:1rem;margin-top:4px}
+ button{width:100%;padding:12px;border-radius:10px;font-size:1rem;margin-top:12px;border:0;background:var(--brand);color:#fff;font-weight:600;cursor:pointer;font-family:inherit}
+ button.alt{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+ button:disabled{opacity:.5;cursor:default}
+ a.back{display:block;text-align:center;margin-top:10px;color:var(--brand);font-size:.9rem;text-decoration:none}
+ .act{background:#e6f6ee;color:#1a7f4b;border-radius:12px;padding:10px 14px;font-size:.88rem;margin:0 0 14px}
+ ul#files{list-style:none;margin:10px 0 0;padding:0}
+ ul#files li{display:flex;align-items:center;gap:10px;background:#f4f6f8;border-radius:10px;padding:8px 10px;margin-top:6px;font-size:.88rem}
+ ul#files li span.n{flex:1;word-break:break-all}
+ ul#files li small{color:#6b7280;white-space:nowrap}
+ ul#files li button{width:auto;margin:0;padding:2px 9px;background:none;color:#c0392b;border:1px solid #c0392b;font-size:.9rem;font-weight:400}
+ #msg{margin-top:12px;font-size:.9rem;min-height:1.2em}.err{color:#c0392b}.ok{color:#1a9e5c}
+ .bar{height:8px;background:#e5e9ee;border-radius:99px;overflow:hidden;margin-top:10px;display:none}.bar i{display:block;height:100%;width:0;background:var(--brand);transition:width .3s}
+ .big{font-size:2.4rem;text-align:center;margin:4px 0}
+ .hint{font-size:.8rem;color:#6b7280}
+</style><link rel="manifest" href="manifest.json"><meta name="theme-color" content="#0f4c81"><link rel="icon" href="icon-192.png">
+</head><body><main>
+
+ <!-- Étape 1 : identifier l'activité -->
+ <section id="v-gate" class="box" style="display:none">
+  <h1>🧾 Facture et attestation</h1>
+  <p>Identifiez d'abord <b>votre activité</b> : scannez son code QR ou saisissez son code.</p>
+  <button id="scan">📷 Scanner le code QR de l'activité</button>
+  <label for="code">ou saisissez le code de l'activité</label>
+  <input id="code" type="text" placeholder="Code de l'activité" autocomplete="off" autocapitalize="characters">
+  <button class="alt" id="go">Continuer</button>
+  <div id="gmsg" class="err" style="margin-top:12px;font-size:.9rem"></div>
+ </section>
+
+ <!-- Étape 2 : dépôt -->
+ <section id="v-form" style="display:none">
+  <div class="box">
+   <h1>🧾 Déposer ma facture</h1>
+   <div class="act" id="actBanner"></div>
+   <p>À la fin de l'activité, indiquez votre identité et joignez votre <b>facture normalisée (PDF)</b>. Vous pouvez en ajouter plusieurs, à plusieurs moments. Votre attestation sera établie à partir de ces informations, après validation par l'administrateur.</p>
+   <label for="nom">Nom</label><input id="nom" type="text" autocomplete="family-name" autocapitalize="characters">
+   <label for="prenom">Prénom(s)</label><input id="prenom" type="text" autocomplete="given-name" autocapitalize="words">
+   <label>Factures normalisées (PDF, 5 Mo maximum chacune)</label>
+   <input id="pick" type="file" accept="application/pdf,.pdf" multiple style="display:none">
+   <button class="alt" id="add" style="margin-top:4px">➕ Ajouter une facture (PDF)</button>
+   <ul id="files"></ul>
+   <button id="send" disabled>Envoyer</button>
+   <div class="bar" id="bar"><i></i></div>
+   <div id="msg"></div>
+  </div>
+  <div class="box" id="done" style="display:none">
+   <div class="big">✅</div>
+   <h1 style="text-align:center" id="doneT"></h1>
+   <p style="text-align:center" id="doneP"></p>
+   <button class="alt" id="more">➕ Ajouter d'autres factures</button>
+  </div>
+  <p class="hint" style="text-align:center"><a href="#" id="changeAct" style="color:#0f4c81">Ce n'est pas mon activité : changer</a></p>
+ </section>
+
+ <a class="back" href="index.html">&larr; Retour à l'accueil</a>
+</main>
+<script src="config.js"></script>
+<script>
+ var MAX_BYTES=5*1024*1024, BATCH=2;
+ var $=function(i){return document.getElementById(i);};
+ var files=[], busy=false, act=null, code='';
+ function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+ function frDate(s){return s?s.split('-').reverse().join('/'):'';}
+ function store(k,v){try{if(v===null)localStorage.removeItem(k);else localStorage.setItem(k,v);}catch(e){}}
+ function load(k){try{return localStorage.getItem(k)||'';}catch(e){return '';}}
+ function show(id){['v-gate','v-form'].forEach(function(x){$(x).style.display=x===id?'block':'none';});}
+
+ /* ---------- Identification de l'activité ---------- */
+ function setAct(c,a){
+  code=c;act=a;store('fact_code',c);store('fact_act',JSON.stringify(a));
+ }
+ function gate(msg){code='';act=null;store('fact_code',null);store('fact_act',null);show('v-gate');$('gmsg').textContent=msg||'';}
+ function openForm(){
+  var per=(act.debut||act.fin)?' · '+(act.debut?'du '+frDate(act.debut):'')+(act.fin?' au '+frDate(act.fin):''):'';
+  $('actBanner').textContent='📅 '+act.name+(act.cible?' — '+act.cible:'')+per;
+  try{var id=JSON.parse(load('fact_ident')||'null');if(id){if(!$('nom').value)$('nom').value=id.nom||'';if(!$('prenom').value)$('prenom').value=id.prenom||'';}}catch(e){}
+  show('v-form');draw();
+ }
+ function tryCode(c,quiet){
+  c=(c||'').trim();if(!c)return Promise.resolve(false);
+  return callApi('matchFactureCode',{text:c}).then(function(r){
+   if(r&&r.ok){var t=c;try{var u=new URL(c);t=u.searchParams.get('code')||u.searchParams.get('t')||c;}catch(e){}setAct(t,r.activity);openForm();return true;}
+   if(!quiet)$('gmsg').textContent=(r&&r.error)||'Code non reconnu.';
+   return false;
+  }).catch(function(e){if(!quiet)$('gmsg').textContent=(e&&e.message)||'Erreur de connexion.';return null;});
+ }
+ $('go').onclick=function(){$('gmsg').textContent='Vérification…';tryCode($('code').value).then(function(ok){if(ok)$('gmsg').textContent='';});};
+ $('code').onkeydown=function(e){if(e.key==='Enter')$('go').click();};
+ $('scan').onclick=function(){location.href='Acces.html?scan=1&inv=1&next=Facture.html';};
+ $('changeAct').onclick=function(e){e.preventDefault();gate('');};
+
+ /* ---------- Liste des factures à envoyer ---------- */
+ function size(n){return n>=1048576?(n/1048576).toFixed(1)+' Mo':Math.max(1,Math.round(n/1024))+' Ko';}
+ function draw(){
+  var ul=$('files');ul.innerHTML='';
+  files.forEach(function(f,i){
+   var li=document.createElement('li');
+   li.innerHTML='<span class="n">📄 '+esc(f.name)+'</span><small>'+size(f.size)+'</small><button data-i="'+i+'" title="Retirer">✕</button>';
+   ul.appendChild(li);
+  });
+  $('send').disabled=busy||!files.length;
+  $('send').textContent=files.length?'Envoyer '+files.length+' facture'+(files.length>1?'s':''):'Envoyer';
+ }
+ $('files').addEventListener('click',function(e){var b=e.target.closest('button[data-i]');if(!b||busy)return;files.splice(+b.dataset.i,1);draw();});
+ $('add').onclick=function(){$('pick').click();};
+ $('pick').onchange=function(){
+  var bad=[];
+  Array.prototype.forEach.call(this.files,function(f){
+   var pdf=/\.pdf$/i.test(f.name)||f.type==='application/pdf';
+   if(!pdf)bad.push(f.name+' : ce n\'est pas un PDF');
+   else if(f.size>MAX_BYTES)bad.push(f.name+' : dépasse 5 Mo');
+   else if(!f.size)bad.push(f.name+' : fichier vide');
+   else if(!files.some(function(x){return x.name===f.name&&x.size===f.size;}))files.push(f);
+  });
+  this.value='';
+  say(bad.length?bad.join(' — '):'',bad.length?'err':'');
+  $('done').style.display='none';draw();
+ };
+ function say(t,c){var m=$('msg');m.className=c||'';m.textContent=t||'';}
+ function b64(file){
+  return new Promise(function(res,rej){var r=new FileReader();r.onload=function(){res(String(r.result).split(',')[1]||'');};r.onerror=function(){rej(new Error('Lecture impossible : '+file.name));};r.readAsDataURL(file);});
+ }
+
+ /* ---------- Envoi ---------- */
+ $('send').onclick=function(){
+  var nom=$('nom').value.trim(),prenom=$('prenom').value.trim();
+  if(!nom||!prenom){say('Indiquez votre nom et votre prénom.','err');return;}
+  if(!files.length||busy)return;
+  if(!navigator.onLine){say("Pas de connexion Internet : l'envoi est impossible pour l'instant. Réessayez dès que la connexion revient.",'err');return;}
+  store('fact_ident',JSON.stringify({nom:nom,prenom:prenom}));
+  busy=true;draw();say('');$('done').style.display='none';
+  var total=files.length,sent=0,last=null,bar=$('bar');bar.style.display='block';bar.firstChild.style.width='4%';
+  function next(){
+   if(!files.length){busy=false;bar.style.display='none';finish(total,last);return;}
+   var batch=files.slice(0,BATCH);
+   Promise.all(batch.map(function(f){return b64(f).then(function(s){return {name:f.name,b64:s};});})).then(function(items){
+    return callApi('submitFacture',{code:code,nom:nom,prenom:prenom,files:items});
+   }).then(function(r){
+    if(r&&r.error==='ACT_INVALID'){busy=false;bar.style.display='none';gate("Cette activité n'accepte plus de dépôt (désactivée ou terminée depuis trop longtemps). Scannez le code de la bonne activité ou contactez l'administrateur.");return;}
+    if(!r||!r.ok){busy=false;bar.style.display='none';draw();say(((r&&r.error)||'Échec de l\'envoi.')+(sent?' ('+sent+' facture(s) déjà envoyée(s).)':''),'err');return;}
+    sent+=batch.length;if(r.total)last=r;files.splice(0,batch.length);bar.firstChild.style.width=Math.round(sent/total*100)+'%';next();
+   }).catch(function(e){busy=false;bar.style.display='none';draw();say((e&&e.message||'Erreur de connexion.')+(sent?' ('+sent+' facture(s) déjà envoyée(s).)':''),'err');});
+  }
+  next();
+ };
+ function finish(n,r){
+  draw();
+  $('doneT').textContent=n+' facture'+(n>1?'s':'')+' envoyée'+(n>1?'s':'');
+  $('doneP').textContent=(r&&r.total?'Au total, '+r.total+' facture'+(r.total>1?'s sont enregistrées':' est enregistrée')+' à votre nom ('+r.nom+' '+r.prenom+'). ':'')+"Votre attestation sera disponible après validation par l'administrateur.";
+  $('done').style.display='block';$('done').scrollIntoView({behavior:'smooth'});
+ }
+ $('more').onclick=function(){$('done').style.display='none';$('add').click();};
+
+ /* ---------- Démarrage : activité déjà connue sur cet appareil ? ---------- */
+ (function(){
+  var c=load('fact_code'),a=null;try{a=JSON.parse(load('fact_act')||'null');}catch(e){}
+  if(!c||!a){ // activité scannée pour la collecte (zone ou hôpital) ?
+   ['zone','hopital'].forEach(function(lv){if(!c){var t=getQr(lv),x=getActivity(lv);if(t&&x){c=t;a=x;}}});
+  }
+  if(c&&a){code=c;act=a;openForm();tryCode(c,true).then(function(ok){if(ok===false)gate("Le code de cette activité n'est plus valable. Scannez à nouveau le code de votre activité.");});}
+  else gate('');
+ })();
+</script></body></html>

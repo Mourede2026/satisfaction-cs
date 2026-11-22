@@ -40,18 +40,31 @@
  if(wantLevel){document.getElementById('title').textContent='Accès enquêteur — '+(wantLevel==='hopital'?'Hôpital':'Zone sanitaire');document.getElementById('backLink').href='index.html#'+wantLevel;}
  if(p.get('expired')){msg.className='err';msg.textContent="Le code d'accès a changé, a été désactivé ou l'activité est terminée. Scannez ou saisissez le nouveau code. Vos réponses en attente sont conservées.";}
  var FORM_FILES={zone:{usagers:'FormUsagers.html',cogecs:'FormCogecs.html'},hopital:{usagers:'FormUsagersHopital.html',communaute:'FormCommunauteHopital.html'}};
- var busy=false;
+ var busy=false, inv=!!p.get('inv');
+ if(inv){document.getElementById('title').textContent='Facture — identifier mon activité';document.getElementById('intro').innerHTML="Scannez le code QR de <b>votre activité</b> (ou saisissez son code) pour déposer vos factures.";document.getElementById('backLink').href='Facture.html';}
  function go(code){
    code=(code||'').trim(); if(!code||busy)return;
    busy=true; msg.className='';msg.textContent='Vérification…';
+   if(inv){ // dépôt de facture : l'activité peut être terminée depuis quelques semaines
+     callApi('matchFactureCode',{text:code}).then(function(r){
+       busy=false;
+       if(!r||!r.ok){msg.className='err';msg.textContent=(r&&r.error)||"Code non reconnu.";return;}
+       var tk=code; try{var u=new URL(code);tk=u.searchParams.get('code')||u.searchParams.get('t')||code;}catch(e){}
+       try{localStorage.setItem('fact_code',tk);localStorage.setItem('fact_act',JSON.stringify(r.activity));}catch(e){}
+       msg.className='ok';msg.textContent='✅ Activité « '+r.activity.name+' » reconnue.';
+       setTimeout(function(){location.replace('Facture.html');},600);
+     }).catch(function(e){busy=false;msg.className='err';msg.textContent=(e&&e.message)||'Erreur de connexion.';});
+     return;
+   }
    callApi('matchQrCode',{text:code}).then(function(r){
      busy=false;
-     if(!r||!r.ok||(r.role!=='enqueteur'&&r.role!=='enqueteur_hopital')){msg.className='err';msg.textContent=(r&&r.error&&r.error!=='QR_INVALID'?r.error+' ':'')+"Code invalide, remplacé ou désactivé. Demandez le code actuel à l'administrateur.";return;}
+     if(!r||!r.ok||(r.role!=='enqueteur'&&r.role!=='enqueteur_hopital')){msg.className='err';msg.textContent=(r&&r.error&&r.error!=='QR_INVALID'?r.error+' ':'')+"Code invalide, remplacé ou désactivé. Demandez le code actuel à l'administrateur."+(r&&/termin/.test(r.error||'')?" Pour déposer votre facture, ouvrez « Facture et attestation » depuis l'accueil.":'');return;}
      var level=r.level||(r.role==='enqueteur_hopital'?'hopital':'zone');
      if(wantLevel&&level!==wantLevel){msg.className='err';msg.textContent=wantLevel==='hopital'?"Ce code est un code de zone sanitaire. Scannez ou saisissez le code de l'hôpital.":"Ce code est un code d'hôpital. Scannez ou saisissez le code de la zone sanitaire.";return;}
      // On garde le code tel que reconnu par le serveur (le lien complet d'un QR est réduit au code)
      var token=code; try{var u=new URL(code);token=u.searchParams.get('code')||u.searchParams.get('t')||code;}catch(e){}
      setQr(level,token,r.label||''); setActivity(level,r.activity||null);
+     if(r.activity){try{localStorage.setItem('fact_code',token);localStorage.setItem('fact_act',JSON.stringify(r.activity));}catch(e){}}
      msg.className='ok';msg.textContent='✅ '+(r.activity?'Activité « '+r.activity.name+' » activée.':'Accès activé.');
      var dest='index.html#'+level, a=r.activity;
      if(a){

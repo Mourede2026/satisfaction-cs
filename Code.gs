@@ -45,6 +45,15 @@ function doPost(e) {
     else if (action === "submitPersonnelHopital") out = appendRecord_(SHEET_PERSONNELS_H, d, 'dept');
     else if (action === "submitCommunauteHopital") out = appendRecord_(SHEET_COMMUNAUTE_H, d, 'dept');
     else if (action === "checkQr") out = { ok: true, valid: qrTokenValid_(d.token, d.level === 'hopital' ? ['enqueteur_hopital'] : d.level === 'zone' ? ['enqueteur'] : QR_ROLES) };
+    else if (action === "submitFacture") out = handleSubmitFacture(d);
+    else if (action === "matchFactureCode") out = handleMatchFactureCode(d.text);
+    else if (action === "listEnqueteurs") out = handleListEnqueteurs(d.token);
+    else if (action === "getFacture") out = handleGetFacture(d.token, d.id);
+    else if (action === "setAttestationValide") out = handleSetAttestationValide(d.token, d.ids, d.valide);
+    else if (action === "updateEnqueteur") out = handleUpdateEnqueteur(d.token, d.id, d.nom, d.prenom);
+    else if (action === "deleteEnqueteur") out = handleDeleteEnqueteur(d.token, d.id);
+    else if (action === "deleteFacture") out = handleDeleteFacture(d.token, d.id);
+    else if (action === "saveAttestParams") out = handleSaveAttestParams(d.token, d.params);
     else if (action === "listAccessCodes") out = handleListAccessCodes(d.token);
     else if (action === "saveAccessCode") out = handleSaveAccessCode(d.token, d.level, d.name, d.code);
     else if (action === "setAccessCodeActive") out = handleSetAccessCodeActive(d.token, d.level, d.name, d.active);
@@ -972,4 +981,211 @@ function hospitalData_(account, sel, periods) {
   periods.forEach(function (p) { trend[p.id] = {}; HOSP_KEYS.forEach(function (k) { trend[p.id][k] = aggRows_(trendRows[k], p); }); });
   var und = {}; HOSP_KEYS.forEach(function (k) { und[k] = aggRows_(trendRows[k].filter(function (r) { return !r.d; }), null); });
   return { data: out, trend: trend, trendUndated: und, errors: errors };
+}
+
+/* ---------- Enquêteurs : factures normalisées (PDF) et attestations de bonne fin d'exécution ---------- */
+// Les factures sont rangées dans un dossier Google Drive (créé tout seul). Les données (nom, prénom, validation) sont dans
+// les feuilles Enqueteurs, Factures et AttestParams. Seul le compte « admin » peut les lire, les valider et les modifier.
+var ENQ_SHEET_NAME = 'Enqueteurs', FACT_SHEET_NAME = 'Factures', ATT_SHEET_NAME = 'AttestParams';
+var ENQ_HEADERS = ['ID', 'IdActivité', 'Activité', 'Niveau', 'Cible', 'Début', 'Fin', 'Nom', 'Prénom', 'Clé', 'CrééLe', 'Validée', 'ValidéeLe'];
+var FACT_HEADERS = ['ID', 'IdEnqueteur', 'Fichier', 'FileId', 'Taille', 'AjoutéLe'];
+var ATT_HEADERS = ['IdActivité', 'Libellé', 'Début', 'Fin', 'Année', 'Lieu', 'DateSignature', 'Qualité', 'ModifiéLe'];
+var FACT_MAX_FILES = 5;                 // factures par envoi
+var FACT_MAX_BYTES = 6 * 1024 * 1024;   // 6 Mo par facture
+var FACT_MAX_PER_ENQ = 40;              // factures au total par enquêteur et par activité
+var FACT_GRACE_DAYS = 60;               // le dépôt reste ouvert 60 jours après la fin de l'activité
+var FACT_FOLDER_NAME = 'Factures enquêteurs - Satisfaction';
+
+/** À exécuter UNE FOIS dans l'éditeur Apps Script : crée les feuilles et autorise l'accès à Google Drive. */
+function setupEnqueteursEtFactures() {
+  tsheet_(ENQ_SHEET_NAME, ENQ_HEADERS); tsheet_(FACT_SHEET_NAME, FACT_HEADERS); tsheet_(ATT_SHEET_NAME, ATT_HEADERS);
+  Logger.log('Dossier des factures : ' + factFolder_().getUrl());
+}
+function tsheet_(name, headers) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), sh = ss.getSheetByName(name);
+  if (!sh) {
+    sh = ss.insertSheet(name); sh.appendRow(headers);
+    try { sh.getRange(1, 1, sh.getMaxRows(), headers.length).setNumberFormat('@'); sh.setFrozenRows(1); } catch (e) {}
+  }
+  return sh;
+}
+function factFolder_() {
+  var p = PropertiesService.getScriptProperties(), id = p.getProperty('FACT_FOLDER');
+  if (id) { try { var f = DriveApp.getFolderById(id); if (!f.isTrashed()) return f; } catch (e) {} }
+  var nf = DriveApp.createFolder(FACT_FOLDER_NAME); p.setProperty('FACT_FOLDER', nf.getId());
+  return nf;
+}
+function rowsOf_(sh, ncol) {
+  if (sh.getLastRow() < 2) return [];
+  var v = sh.getRange(2, 1, sh.getLastRow() - 1, ncol).getValues(), out = [];
+  for (var i = 0; i < v.length; i++) if (String(v[i][0]).trim() !== '') out.push({ row: i + 2, v: v[i] });
+  return out;
+}
+function cleanName_(s) { return String(s || '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').replace(/^[=+\-@\s]+/, '').trim().slice(0, 60); }
+function fmtNom_(s) { return cleanName_(s).toUpperCase(); }
+function fmtPrenom_(s) {
+  s = cleanName_(s);
+  if (s !== s.toLowerCase() && s !== s.toUpperCase()) return s; // déjà saisi avec majuscules et minuscules : on ne touche pas
+  return s.toLowerCase().replace(/(^|[\s\-'’])([^\s\-'’])/g, function (m, a, b) { return a + b.toUpperCase(); });
+}
+function nameKey_(nom, prenom) { return strip_(nom) + '|' + strip_(prenom); }
+function newId_(prefix) { return prefix + Utilities.getUuid().replace(/-/g, '').slice(0, 8).toUpperCase(); }
+function codeFromText_(raw) {
+  raw = String(raw || '').trim(); var cand = raw, q = raw.indexOf('?');
+  if (raw.indexOf('http') === 0 && q !== -1) {
+    raw.substring(q + 1).split('#')[0].split('&').forEach(function (p) { var kv = p.split('='); if (kv[0] === 'code' || kv[0] === 't') cand = decodeURIComponent(kv.slice(1).join('=')); });
+  }
+  return String(cand).trim();
+}
+/** Activité (non désactivée) correspondant au code, jusqu'à FACT_GRACE_DAYS jours après sa fin. */
+function activityForInvoice_(code) {
+  code = String(code || '').trim().toUpperCase(); if (!code) return null;
+  var today = day_(new Date()), f = null;
+  activitiesRows_().forEach(function (a) {
+    if (a.code.toUpperCase() !== code || !a.active) return;
+    if (a.fin && today > dayPlus_(a.fin, FACT_GRACE_DAYS)) return;
+    f = a;
+  });
+  return f;
+}
+function handleMatchFactureCode(rawText) {
+  var cand = codeFromText_(rawText); if (!cand) return { ok: false, error: 'QR code vide.' };
+  var a = activityForInvoice_(cand);
+  if (!a) return { ok: false, error: "Ce code ne correspond à aucune activité ouverte au dépôt de factures (activité inconnue, désactivée ou terminée depuis trop longtemps)." };
+  return { ok: true, activity: activityPublic_(a), label: a.name + (a.cible ? ' — ' + a.cible : '') };
+}
+/** Dépôt d'une ou plusieurs factures PDF par un enquêteur (accès par le code de son activité). */
+function handleSubmitFacture(d) {
+  var a = activityForInvoice_(d.code); if (!a) return { ok: false, error: 'ACT_INVALID' };
+  var nom = fmtNom_(d.nom), prenom = fmtPrenom_(d.prenom);
+  if (!nom || !prenom) return { ok: false, error: 'Indiquez votre nom et votre prénom.' };
+  var files = d.files || [];
+  if (!files.length) return { ok: false, error: 'Ajoutez au moins une facture au format PDF.' };
+  if (files.length > FACT_MAX_FILES) return { ok: false, error: 'Maximum ' + FACT_MAX_FILES + ' factures par envoi.' };
+  var blobs = [];
+  for (var i = 0; i < files.length; i++) {
+    var bytes;
+    try { bytes = Utilities.base64Decode(String(files[i].b64 || '')); } catch (e) { return { ok: false, error: 'Fichier illisible : ' + cleanName_(files[i].name) }; }
+    if (!bytes.length || bytes.length > FACT_MAX_BYTES) return { ok: false, error: 'La facture « ' + cleanName_(files[i].name) + ' » dépasse ' + Math.round(FACT_MAX_BYTES / 1048576) + ' Mo ou est vide.' };
+    if (!(bytes[0] === 37 && bytes[1] === 80 && bytes[2] === 68 && bytes[3] === 70)) return { ok: false, error: 'La facture « ' + cleanName_(files[i].name) + ' » n\'est pas un fichier PDF.' };
+    var orig = cleanName_(files[i].name).replace(/[\\\/:*?"<>|]+/g, '-').replace(/\.pdf$/i, '').slice(0, 60) || 'facture';
+    blobs.push({ bytes: bytes, name: orig });
+  }
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    var esh = tsheet_(ENQ_SHEET_NAME, ENQ_HEADERS), fsh = tsheet_(FACT_SHEET_NAME, FACT_HEADERS), key = nameKey_(nom, prenom), ex = null;
+    rowsOf_(esh, ENQ_HEADERS.length).forEach(function (r) { if (String(r.v[1]) === a.id && String(r.v[9]) === key) ex = r; });
+    var eid = ex ? String(ex.v[0]) : newId_('E');
+    var have = rowsOf_(fsh, FACT_HEADERS.length).filter(function (r) { return String(r.v[1]) === eid; }).length;
+    if (have + blobs.length > FACT_MAX_PER_ENQ) return { ok: false, error: 'Limite de ' + FACT_MAX_PER_ENQ + ' factures atteinte pour cet enquêteur.' };
+    if (!ex) esh.getRange(esh.getLastRow() + 1, 1, 1, ENQ_HEADERS.length).setNumberFormat('@').setValues([[eid, a.id, a.name, a.level, a.cible, a.debut, a.fin, nom, prenom, key, new Date().toISOString(), 'NON', '']]);
+    var folder = factFolder_(), now = new Date().toISOString(), stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd-HHmmss');
+    blobs.forEach(function (b, i) {
+      var fname = nom + '_' + prenom + '_' + stamp + '_' + (have + i + 1) + '.pdf';
+      var file = folder.createFile(Utilities.newBlob(b.bytes, 'application/pdf', fname));
+      fsh.getRange(fsh.getLastRow() + 1, 1, 1, FACT_HEADERS.length).setNumberFormat('@').setValues([[newId_('F'), eid, b.name + '.pdf', file.getId(), String(b.bytes.length), now]]);
+    });
+    SpreadsheetApp.flush();
+    return { ok: true, nom: nom, prenom: prenom, ajoutees: blobs.length, total: have + blobs.length, activite: a.name };
+  } finally { lock.releaseLock(); }
+}
+function attestParamsMap_() {
+  var m = {};
+  rowsOf_(tsheet_(ATT_SHEET_NAME, ATT_HEADERS), ATT_HEADERS.length).forEach(function (r) {
+    var v = r.v; m[String(v[0])] = { libelle: String(v[1] || ''), debut: day_(v[2]), fin: day_(v[3]), annee: String(v[4] || ''), lieu: String(v[5] || ''), dateSignature: day_(v[6]), qualite: String(v[7] || '') };
+  });
+  return m;
+}
+/** Liste complète pour l'administrateur : activités (avec paramètres d'attestation), enquêteurs et leurs factures. */
+function handleListEnqueteurs(token) {
+  var c = requireAdminSession_(token); if (!c.ok) return c;
+  var live = {}; activitiesRows_().forEach(function (a) { live[a.id] = a; });
+  var params = attestParamsMap_(), fm = {}, acts = {}, enq = [];
+  rowsOf_(tsheet_(FACT_SHEET_NAME, FACT_HEADERS), FACT_HEADERS.length).forEach(function (r) {
+    var k = String(r.v[1]); (fm[k] = fm[k] || []).push({ id: String(r.v[0]), name: String(r.v[2]), size: Number(r.v[4]) || 0, date: String(r.v[5]) });
+  });
+  rowsOf_(tsheet_(ENQ_SHEET_NAME, ENQ_HEADERS), ENQ_HEADERS.length).forEach(function (r) {
+    var v = r.v, aid = String(v[1]);
+    if (!acts[aid]) {
+      var l = live[aid];
+      acts[aid] = l ? { id: aid, name: l.name, level: l.level, cible: l.cible, debut: l.debut, fin: l.fin, active: l.active, supprimee: false }
+                    : { id: aid, name: String(v[2]), level: String(v[3]), cible: String(v[4]), debut: day_(v[5]), fin: day_(v[6]), active: false, supprimee: true };
+      acts[aid].params = params[aid] || null;
+    }
+    enq.push({ id: String(v[0]), actId: aid, nom: String(v[7]), prenom: String(v[8]), created: String(v[10]), valide: String(v[11]) === 'OUI', valideLe: String(v[12] || ''), factures: (fm[String(v[0])] || []) });
+  });
+  var list = Object.keys(acts).map(function (k) { return acts[k]; });
+  // les activités encore ouvertes sans enquêteur sont aussi proposées (pour régler leurs paramètres à l'avance)
+  Object.keys(live).forEach(function (k) { if (!acts[k]) { var l = live[k]; list.push({ id: k, name: l.name, level: l.level, cible: l.cible, debut: l.debut, fin: l.fin, active: l.active, supprimee: false, params: params[k] || null }); } });
+  list.sort(function (x, y) { return (x.debut || '') < (y.debut || '') ? 1 : (x.debut || '') > (y.debut || '') ? -1 : 0; });
+  return { ok: true, activities: list, enqueteurs: enq };
+}
+function handleGetFacture(token, id) {
+  var c = requireAdminSession_(token); if (!c.ok) return c;
+  var f = rowsOf_(tsheet_(FACT_SHEET_NAME, FACT_HEADERS), FACT_HEADERS.length).filter(function (r) { return String(r.v[0]) === String(id); })[0];
+  if (!f) return { ok: false, error: 'Facture introuvable.' };
+  try { var b = DriveApp.getFileById(String(f.v[3])).getBlob(); return { ok: true, name: String(f.v[2]), b64: Utilities.base64Encode(b.getBytes()) }; }
+  catch (e) { return { ok: false, error: "Fichier introuvable dans Google Drive (supprimé ?)." }; }
+}
+/** Valide ou retire la validation de l'attestation d'une liste d'enquêteurs. */
+function handleSetAttestationValide(token, ids, valide) {
+  var c = requireAdminSession_(token); if (!c.ok) return c;
+  if (!ids || !ids.length) return { ok: false, error: 'Aucun enquêteur.' };
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    var sh = tsheet_(ENQ_SHEET_NAME, ENQ_HEADERS), set = {}; ids.forEach(function (i) { set[String(i)] = 1; });
+    var n = 0, now = new Date().toISOString();
+    rowsOf_(sh, ENQ_HEADERS.length).forEach(function (r) {
+      if (!set[String(r.v[0])]) return;
+      sh.getRange(r.row, 12, 1, 2).setNumberFormat('@').setValues([[valide ? 'OUI' : 'NON', valide ? now : '']]); n++;
+    });
+    return { ok: true, modifies: n, date: valide ? now : '' };
+  } finally { lock.releaseLock(); }
+}
+function handleUpdateEnqueteur(token, id, nom, prenom) {
+  var c = requireAdminSession_(token); if (!c.ok) return c;
+  nom = fmtNom_(nom); prenom = fmtPrenom_(prenom);
+  if (!nom || !prenom) return { ok: false, error: 'Nom et prénom obligatoires.' };
+  var sh = tsheet_(ENQ_SHEET_NAME, ENQ_HEADERS), rows = rowsOf_(sh, ENQ_HEADERS.length), me = null, key = nameKey_(nom, prenom);
+  rows.forEach(function (r) { if (String(r.v[0]) === String(id)) me = r; });
+  if (!me) return { ok: false, error: 'Enquêteur introuvable.' };
+  if (rows.some(function (r) { return String(r.v[0]) !== String(id) && String(r.v[1]) === String(me.v[1]) && String(r.v[9]) === key; })) return { ok: false, error: 'Un autre enquêteur de cette activité porte déjà ce nom et ce prénom.' };
+  sh.getRange(me.row, 8, 1, 3).setNumberFormat('@').setValues([[nom, prenom, key]]);
+  return { ok: true, nom: nom, prenom: prenom };
+}
+function trashFactureFile_(fileId) { try { DriveApp.getFileById(String(fileId)).setTrashed(true); } catch (e) {} }
+function handleDeleteFacture(token, id) {
+  var c = requireAdminSession_(token); if (!c.ok) return c;
+  var sh = tsheet_(FACT_SHEET_NAME, FACT_HEADERS), f = rowsOf_(sh, FACT_HEADERS.length).filter(function (r) { return String(r.v[0]) === String(id); })[0];
+  if (!f) return { ok: false, error: 'Facture introuvable.' };
+  trashFactureFile_(f.v[3]); sh.deleteRow(f.row);
+  return { ok: true };
+}
+function handleDeleteEnqueteur(token, id) {
+  var c = requireAdminSession_(token); if (!c.ok) return c;
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    var fsh = tsheet_(FACT_SHEET_NAME, FACT_HEADERS), rows = rowsOf_(fsh, FACT_HEADERS.length);
+    for (var i = rows.length - 1; i >= 0; i--) if (String(rows[i].v[1]) === String(id)) { trashFactureFile_(rows[i].v[3]); fsh.deleteRow(rows[i].row); }
+    var esh = tsheet_(ENQ_SHEET_NAME, ENQ_HEADERS), e = rowsOf_(esh, ENQ_HEADERS.length).filter(function (r) { return String(r.v[0]) === String(id); })[0];
+    if (!e) return { ok: false, error: 'Enquêteur introuvable.' };
+    esh.deleteRow(e.row);
+    return { ok: true };
+  } finally { lock.releaseLock(); }
+}
+/** Paramètres modifiables de l'attestation d'une activité (zone / hôpital affiché, dates, année, lieu et date de signature). */
+function handleSaveAttestParams(token, p) {
+  var c = requireAdminSession_(token); if (!c.ok) return c;
+  p = p || {}; var id = String(p.actId || '').trim(); if (!id) return { ok: false, error: 'Activité inconnue.' };
+  var rx = /^\d{4}-\d{2}-\d{2}$/, debut = String(p.debut || ''), fin = String(p.fin || ''), ds = String(p.dateSignature || ''), annee = String(p.annee || '').trim();
+  if ((debut && !rx.test(debut)) || (fin && !rx.test(fin)) || (ds && !rx.test(ds))) return { ok: false, error: 'Date invalide.' };
+  if (debut && fin && fin < debut) return { ok: false, error: 'La date de fin précède la date de début.' };
+  if (annee && !/^\d{4}$/.test(annee)) return { ok: false, error: 'Année invalide.' };
+  var row = [id, cleanName_(p.libelle).slice(0, 80), debut, fin, annee, cleanName_(p.lieu).slice(0, 60), ds, cleanName_(p.qualite).slice(0, 60), new Date().toISOString()];
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    var sh = tsheet_(ATT_SHEET_NAME, ATT_HEADERS), ex = rowsOf_(sh, ATT_HEADERS.length).filter(function (r) { return String(r.v[0]) === id; })[0];
+    sh.getRange(ex ? ex.row : sh.getLastRow() + 1, 1, 1, ATT_HEADERS.length).setNumberFormat('@').setValues([row]);
+    return { ok: true };
+  } finally { lock.releaseLock(); }
 }
