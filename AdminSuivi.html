@@ -291,7 +291,7 @@
    '<label class="l" for="dureeMin" style="margin-top:0">Durée minimale d\'un questionnaire (début → fin), en minutes</label><input id="dureeMin" inputmode="decimal" value="'+esc(st.dureeMin)+'" placeholder="Ex. 5" style="max-width:200px">'+
    '<label class="l" for="intervalleMin">Intervalle minimal entre la fin d\'un questionnaire et le début du suivant, en minutes</label><input id="intervalleMin" inputmode="decimal" value="'+esc(st.intervalleMin)+'" placeholder="Ex. 2" style="max-width:200px">'+
    '<label class="l" for="tailleCentre">Nombre de questionnaires attendus pour un centre (ex. 60)</label><input id="tailleCentre" inputmode="numeric" value="'+esc(st.tailleCentre)+'" placeholder="Ex. 60" style="max-width:200px">'+
-   '<label class="l" for="plafondPct">Part maximale qu\'un même téléphone peut valider par jour et par cible, en % du centre (ex. 75)</label><input id="plafondPct" inputmode="decimal" value="'+esc(st.plafondPct)+'" placeholder="Ex. 75" style="max-width:200px"><div class="hint" id="plafPrev" style="margin-top:8px"></div></div>';
+   '<label class="l" for="plafondPct">Part maximale qu\'un même téléphone peut valider par jour et par centre, en % du centre (ex. 75)</label><input id="plafondPct" inputmode="decimal" value="'+esc(st.plafondPct)+'" placeholder="Ex. 75" style="max-width:200px"><div class="hint" id="plafPrev" style="margin-top:8px"></div></div>';
   h+='<div class="box"><h2>💰 Montant total à payer</h2><p class="hint">Montant total prévu pour tous les enquêteurs de l\'activité (en FCFA). Il est réparti à parts égales entre les enquêteurs inscrits. Un enquêteur qui n\'atteint pas l\'objectif attendu perçoit son per diem au prorata du nombre de questionnaires réalisés.</p>'+
    '<label class="l" for="montant" style="margin-top:0">Montant total à payer (FCFA)</label><input id="montant" inputmode="numeric" value="'+esc(st.montant)+'" placeholder="Ex. 1500000" style="max-width:340px"><div id="montantPrev" class="hint" style="margin-top:8px"></div></div>';
   if(adm){
@@ -303,7 +303,7 @@
   $('v-conf').innerHTML=h;drawEnqs();drawObj();updatePrev();
   if(adm){drawSups();drawEff();$('effT').oninput=function(){st.effTotal=this.value;};}
   $('montant').oninput=function(){st.montant=this.value;updatePrev();};
-  function pp(){var c=Math.round(Number(String(st.tailleCentre).replace(',','.'))||0),p=Number(String(st.plafondPct).replace(',','.'))||0;$('plafPrev').textContent=(c>0&&p>0)?'Plafond : '+Math.max(1,Math.floor(c*p/100))+' questionnaires validés par téléphone, par jour et par cible (hors COGECS, non concernés). Au-delà, ils sont rejetés ; un second téléphone peut terminer le centre.':'';}
+  function pp(){var c=Math.round(Number(String(st.tailleCentre).replace(',','.'))||0),p=Number(String(st.plafondPct).replace(',','.'))||0;$('plafPrev').textContent=(c>0&&p>0)?'Plafond : '+Math.max(1,Math.floor(c*p/100))+' questionnaires validés par téléphone, par jour et par centre (hors COGECS, non concernés). Au-delà, ils sont rejetés ; l\'enquêteur peut ensuite faire d\'autres centres, chacun avec son propre plafond ; un second téléphone peut terminer le centre.':'';}
   $('tailleCentre').oninput=function(){st.tailleCentre=this.value;pp();};$('plafondPct').oninput=function(){st.plafondPct=this.value;pp();};pp();
   $('dureeMin').oninput=function(){st.dureeMin=this.value;};$('intervalleMin').oninput=function(){st.intervalleMin=this.value;};
  }
