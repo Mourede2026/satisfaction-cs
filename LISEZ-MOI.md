@@ -110,3 +110,5 @@ Penser à **Enregistrer la configuration**.
 Dans `Facture.html`, le bouton **✅ M'enregistrer (sans facture)** envoie uniquement nom, prénom et numéro d'enquêteur : l'enquêteur apparaît aussitôt dans la liste de l'administrateur et des superviseurs (`AdminSuivi.html`, `AdminAttestations.html`), sans déposer de facture. La facture s'ajoute plus tard avec les mêmes informations. L'objectif par cible défini dans la configuration du suivi s'applique automatiquement à chaque inscrit. Aucun changement de `Code.gs` : déposez seulement `Facture.html` et `sw.js`.
 
 (v17) Dans `Facture.html`, un enquêteur déjà enregistré voit son identité en rappel (prénom, nom, numéro) au lieu des champs : il ajoute seulement ses factures. Le lien « Ce n'est pas moi / modifier » rouvre les champs. Seuls `Facture.html` et `sw.js` changent.
+
+(v18) Navigation : avec une activité scannée, « Collecter des données » ouvre directement les cibles de son niveau (zone ou hôpital), la flèche retour des cibles ramène à l'accueil, et `Facture.html` renvoie vers les cibles de l'enquêteur. `index.html`, `Facture.html` et `sw.js` changent.

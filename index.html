@@ -92,6 +92,7 @@
     var L = LEVELS[level], has = !!getQr(level);
     // Activité scannée : l'enquêteur doit d'abord s'inscrire (nom, prénom, numéro) avant de collecter
     if (has && getActivity(level) && !getEnq(level)) { location.replace('Enqueteur.html?level=' + level + '&next=' + encodeURIComponent('index.html#' + level)); return; }
+    var bk = document.querySelector('#v-cibles a.back'); if (bk) bk.setAttribute('href', (has && getActivity(level)) ? '#' : '#niveau');
     $('cTitle').textContent = L.title; $('cSub').textContent = L.sub;
     var acc = $('cAccess'); acc.innerHTML = '';
     var act = has ? getActivity(level) : null;
@@ -141,6 +142,11 @@
   function route(){
     var h = (location.hash || '').replace('#', '');
     ['home', 'niveau', 'cibles'].forEach(function(v){ $('v-' + v).classList.remove('on'); });
+    // Activité déjà scannée sur un seul niveau : on va directement à ses cibles, sans redemander zone ou hôpital
+    if (h === 'niveau') {
+      var lv = ['zone', 'hopital'].filter(function(l){ return getQr(l) && getActivity(l); });
+      if (lv.length === 1) { location.replace('#' + lv[0]); return; }
+    }
     if (h === 'niveau') $('v-niveau').classList.add('on');
     else if (LEVELS[h]) { renderCibles(h); $('v-cibles').classList.add('on'); }
     else $('v-home').classList.add('on');

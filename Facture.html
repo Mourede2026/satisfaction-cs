@@ -80,7 +80,7 @@
   <div id="attMsg" style="margin-top:10px;font-size:.9rem"></div>
  </section>
 
- <a class="back" href="index.html">&larr; Retour à l'accueil</a>
+ <a class="back" id="backHome" href="index.html">&larr; Retour à l'accueil</a>
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="config.js"></script>
@@ -101,6 +101,8 @@
  }
  function gate(msg){code='';act=null;store('fact_code',null);store('fact_act',null);show('v-gate');$('gmsg').textContent=msg||'';}
  function openForm(){
+  $('backHome').href=act&&act.level?'index.html#'+(act.level==='hopital'?'hopital':'zone'):'index.html';
+  $('backHome').textContent=act&&act.level?'← Retour aux cibles de mon enquête':'← Retour à l\'accueil';
   var per=(act.debut||act.fin)?' · '+(act.debut?'du '+frDate(act.debut):'')+(act.fin?' au '+frDate(act.fin):''):'';
   $('actBanner').textContent='📅 '+act.name+(act.cible?' — '+act.cible:'')+per;
   try{var id=getEnqByCode(code)||JSON.parse(load('fact_ident')||'null');if(id){if(!$('nom').value)$('nom').value=id.nom||'';if(!$('prenom').value)$('prenom').value=id.prenom||'';if(!$('numero').value)$('numero').value=id.numero||'';}}catch(e){}
