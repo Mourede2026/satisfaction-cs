@@ -174,7 +174,7 @@
   };
   function getQ() { try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); } catch (e) { return []; } }
   function setQ(q) { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); }
-  function queue(d) { var q = getQ(); q.push(d); setQ(q); badge(); }
+  function queue(d) { if (!d._cid) d._cid = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(16).slice(2); var q = getQ(); if (!q.some(function (x) { return x._cid === d._cid; })) q.push(d); setQ(q); badge(); }
   function badge() {
     var q = getQ(), el = $('qCount'), b = $('status-banner');
     if (q.length) { el.style.display = 'inline-block'; el.textContent = q.length; } else el.style.display = 'none';
@@ -182,17 +182,24 @@
     else if (q.length) { b.className = 'queued'; b.textContent = q.length + ' réponse(s) en attente de synchronisation.'; }
     else { b.className = ''; b.textContent = ''; }
   }
+  var syncing = false;
   window.syncQueue = function (manual) {
-    var q = getQ();
-    if (!q.length) { if (manual) toast('Aucune réponse en attente.'); return; }
+    if (syncing) return;
+    if (!getQ().length) { if (manual) toast('Aucune réponse en attente.'); return; }
     if (!navigator.onLine) { if (manual) toast('Toujours hors connexion.'); return; }
+    syncing = true;
+    function stop(m) { syncing = false; badge(); if (m && manual) toast(m); }
     (function next() {
-      if (!q.length) { setQ(q); badge(); if (manual) toast('✅ Synchronisation terminée.'); return; }
-      callApi(S.fn, q[0]).then(function (r) {
-        if (r && r.ok) { q.shift(); setQ(q); badge(); next(); } else { setQ(q); badge(); if (manual) toast('Synchronisation interrompue.'); }
-      }).catch(function () { setQ(q); badge(); if (manual) toast('Synchronisation interrompue (connexion).'); });
+      var q = getQ();
+      if (!q.length) { stop('✅ Synchronisation terminée.'); return; }
+      var item = q[0];
+      callApi(S.fn, item).then(function (r) {
+        if (r && r.ok) { setQ(getQ().filter(function (x) { return x._cid !== item._cid; })); badge(); next(); }
+        else { stop('Synchronisation interrompue.'); }
+      }).catch(function () { stop('Synchronisation interrompue (connexion).'); });
     })();
   };
+  setInterval(function () { if (navigator.onLine && getQ().length) window.syncQueue(false); }, 30000);
   function reset() { ans = {}; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
   function toast(m) { var t = $('toast'); t.textContent = m; t.style.display = 'block'; setTimeout(function () { t.style.display = 'none'; }, 3000); }
   window.addEventListener('online', function () { badge(); window.syncQueue(false); });

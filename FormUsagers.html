@@ -300,9 +300,12 @@ function sendOrQueue(payload, done){
     .catch(() => { queueSubmission(payload); showToast('Connexion instable : réponse sauvegardée localement.'); resetForm(); done(); });
 }
 
+function newCid(){ return (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(16).slice(2); }
+function readQueue(){ try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); } catch(e){ return []; } }
 function queueSubmission(payload){
-  const q = JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]');
-  q.push(payload);
+  if (!payload._cid) payload._cid = newCid();
+  const q = readQueue();
+  if (!q.some(x => x._cid === payload._cid)) q.push(payload);
   localStorage.setItem(QUEUE_KEY, JSON.stringify(q));
   updateQueueBadge();
 }
@@ -322,20 +325,31 @@ function updateQueueBadge(){
   }
 }
 
+let syncing = false;
 function syncQueue(manual){
-  const q = JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]');
-  if (q.length === 0){ if(manual) showToast('Aucune réponse en attente.'); return; }
+  if (syncing) return;
+  if (readQueue().length === 0){ if(manual) showToast('Aucune réponse en attente.'); return; }
   if (!navigator.onLine){ if(manual) showToast('Toujours hors connexion.'); return; }
-  let remaining = q.slice();
+  syncing = true;
+  function stop(msg){ syncing = false; updateQueueBadge(); if(msg && manual) showToast(msg); }
   function next(){
-    if (remaining.length === 0){ localStorage.setItem(QUEUE_KEY, JSON.stringify(remaining)); updateQueueBadge(); if(manual) showToast('✅ Synchronisation terminée.'); return; }
-    const item = remaining[0];
+    const q = readQueue();
+    if (q.length === 0){ stop('✅ Synchronisation terminée.'); return; }
+    const item = q[0];
     callApi(SUBMIT_FN, item)
-      .then(res => { if (res && res.ok){ remaining.shift(); localStorage.setItem(QUEUE_KEY, JSON.stringify(remaining)); updateQueueBadge(); next(); } else { localStorage.setItem(QUEUE_KEY, JSON.stringify(remaining)); updateQueueBadge(); if(manual) showToast('Synchronisation interrompue (connexion).'); } })
-      .catch(() => { localStorage.setItem(QUEUE_KEY, JSON.stringify(remaining)); updateQueueBadge(); if(manual) showToast('Synchronisation interrompue (connexion).'); });
+      .then(res => {
+        if (res && res.ok){
+          // retire uniquement l'élément envoyé, sans écraser les réponses ajoutées entre-temps
+          localStorage.setItem(QUEUE_KEY, JSON.stringify(readQueue().filter(x => x._cid !== item._cid)));
+          updateQueueBadge(); next();
+        } else { stop('Synchronisation interrompue.'); }
+      })
+      .catch(() => stop('Synchronisation interrompue (connexion).'));
   }
   next();
 }
+// Nouvelle tentative automatique toutes les 30 s tant qu'il reste des réponses en attente
+setInterval(function(){ if (navigator.onLine && readQueue().length) syncQueue(false); }, 30000);
 
 function resetForm(){
   currentAnswers = {};

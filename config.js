@@ -83,3 +83,12 @@ function callApi(action, data, password) {
 })();
 
 if ('serviceWorker' in navigator) { window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); }); }
+
+// Lien direct « solo » (?solo=1) : le formulaire du personnel s'ouvre seul, sans lien de retour vers l'accueil
+(function () {
+  if (!/[?&]solo=1/.test(location.search) || !/FormPersonnel/.test(location.pathname)) return;
+  document.addEventListener("DOMContentLoaded", function () {
+    var a = document.querySelectorAll("a.back");
+    for (var i = 0; i < a.length; i++) a[i].parentNode.removeChild(a[i]);
+  });
+})();

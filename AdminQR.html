@@ -56,6 +56,11 @@
  <div id="err"></div>
  <div id="panel" style="display:none">
   <p class="hint">Un code sert à l'enquêteur pour enregistrer des données. Il le saisit (ou le scanne) <b>une seule fois</b>, puis il reste valable dans son niveau de travail. Le personnel n'a jamais besoin de code. Le <b>code général</b> marche pour tout le niveau ; un <b>code spécifique</b> est réservé à une zone sanitaire ou à un hôpital précis.</p>
+  <h2>🔗 Liens directs pour le personnel</h2>
+  <div class="grid">
+   <div class="box"><h3>👩‍⚕️ Personnel du centre de santé</h3><p class="hint">Ouvre uniquement ce formulaire, sans accès aux autres. Aucun code requis.</p><div class="code" id="lk-cs" style="font-size:.8rem"></div><div class="row"><button class="alt" onclick="lkCopy('cs')">📋 Copier</button><button class="alt" onclick="lkShare('cs')">📤 Partager</button><button class="alt" onclick="lkOpen('cs')">Ouvrir</button></div></div>
+   <div class="box"><h3>🩺 Personnel de l'hôpital</h3><p class="hint">Ouvre uniquement ce formulaire, sans accès aux autres. Aucun code requis.</p><div class="code" id="lk-hop" style="font-size:.8rem"></div><div class="row"><button class="alt" onclick="lkCopy('hop')">📋 Copier</button><button class="alt" onclick="lkShare('hop')">📤 Partager</button><button class="alt" onclick="lkOpen('hop')">Ouvrir</button></div></div>
+  </div>
   <h2>🏘️ Zones sanitaires</h2><div class="grid" id="list-zone"></div>
   <div class="box addBox"><h3>Ajouter un code pour une zone sanitaire</h3>
    <div class="add"><div><label>Nom de la zone sanitaire</label><input id="n-zone" list="dl-zone" placeholder="Ex. Djidja-Abomey-Agbangnizoun"></div>
@@ -90,12 +95,18 @@
  function saveSrv(){var u=$('srv').value.trim();if(!srvOk(u)){$('srvMsg').textContent='Adresse invalide.';return;}localStorage.setItem('api_url',u);$('srvMsg').textContent='✅ Adresse enregistrée sur cet appareil. Reconnectez-vous.';}
  function resetSrv(){localStorage.removeItem('api_url');$('srv').value=apiUrl();$('srvMsg').textContent="Adresse d'origine rétablie.";}
  function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+ var LK={cs:'FormPersonnels.html',hop:'FormPersonnelHopital.html'};
+ function lkUrl(k){return new URL(LK[k],location.href).href+'?solo=1';}
+ function lkInit(){for(var k in LK){$('lk-'+k).textContent=lkUrl(k);}}
+ function lkCopy(k){var u=lkUrl(k);if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(u).then(function(){toast('Lien copié');},function(){prompt('Copiez ce lien :',u);});}else{prompt('Copiez ce lien :',u);}}
+ function lkShare(k){var u=lkUrl(k);if(navigator.share){navigator.share({title:'Enquête de satisfaction - Personnel',url:u}).catch(function(){});}else{lkCopy(k);}}
+ function lkOpen(k){window.open(lkUrl(k),'_blank');}
  function login(){
   err('Connexion…');
   callApi('accountLogin',{username:$('u').value.trim()},$('p').value).then(function(r){
    if(!r||!r.ok){err(r&&r.error||'Échec de connexion');return;}
    if(r.account.level!=='admin'){err("Réservé au compte administrateur.");return;}
-   tok=r.token;err('');$('login').style.display='none';$('panel').style.display='block';$('logout').style.display='inline';load();
+   tok=r.token;err('');$('login').style.display='none';$('panel').style.display='block';lkInit();$('logout').style.display='inline';load();
   }).catch(function(e){err(e.message||'Erreur de connexion.');});
  }
  function api(action,data){data=data||{};data.token=tok;return callApi(action,data).then(function(r){if(!r||!r.ok){throw new Error(r&&r.error||'Erreur');}return r;});}
