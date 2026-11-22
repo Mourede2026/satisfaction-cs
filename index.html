@@ -137,7 +137,7 @@
       L.cards.forEach(function(c){
         if (!c.key || !r.cibles[c.key]) return;
         var x = r.cibles[c.key], pend = pendingOf(c.key + (level === 'hopital' ? '_hopital' : ''));
-        rows += '<tr><td>' + c.t + (pend ? '<br><small>⏳ ' + pend + ' en attente d\'envoi</small>' : '') + '</td><td class="n ok">' + x.valides + '</td><td class="n ko">' + x.rejetes + '</td><td class="n">' + (x.objectif === null ? '—' : x.objectif) + '</td><td class="n"><b>' + (x.reste === null ? '—' : x.reste) + '</b></td></tr>';
+        rows += '<tr><td>' + c.t + (pend ? '<br><small>⏳ ' + pend + ' en attente d\'envoi</small>' : '') + '</td><td class="n ok">' + x.valides + '</td><td class="n ko">' + x.rejetes + '</td>' + (r.modeCentre ? '' : '<td class="n">' + (x.objectif === null ? '—' : x.objectif) + '</td><td class="n"><b>' + (x.reste === null ? '—' : x.reste) + '</b></td>') + '</tr>';
         var card = document.querySelector('#cCards [data-key="' + c.key + '"]');
         if (card) { var sp = card.querySelector('.cnt'); if (!sp) { sp = el('span', 'cnt', ''); card.appendChild(sp); } sp.textContent = '✅ ' + x.valides + ' validé' + (x.valides > 1 ? 's' : '') + (x.rejetes ? ' · ❌ ' + x.rejetes + ' rejeté' + (x.rejetes > 1 ? 's' : '') : ''); }
       });
@@ -149,9 +149,9 @@
         var LB = {usagers: 'Usagers', cogecs: 'COGECS', communaute: 'Communauté'};
         ctr = '<h2 style="margin-top:14px">🏥 Mes centres enquêtés (' + r.centres.length + ')</h2><table><thead><tr><th>Centre</th><th>Avancement (validés / quota)</th><th class="n">Montant</th></tr></thead><tbody>' +
           r.centres.map(function(c){ return '<tr><td>' + c.centre + (c.complet ? ' ✅' : '') + '</td><td>' + Object.keys(c.cibles).map(function(k){ return (LB[k] || k) + ' ' + Math.min(c.cibles[k].valides, c.cibles[k].quota) + '/' + c.cibles[k].quota; }).join(' · ') + '</td><td class="n">' + c.montant + ' FCFA</td></tr>'; }).join('') +
-          '</tbody></table><p class="hint">Gain à ce jour : <b>' + (r.gain || 0) + ' FCFA</b>. Un centre complet rapporte ' + r.montantCentre + ' FCFA ; au-delà du quota, le surplus n\'est pas payé.</p>';
+          '</tbody></table><p class="hint">Gain à ce jour : <b>' + (r.gain || 0) + ' FCFA</b>. Votre total final dépend du nombre de centres que vous aurez faits : chaque centre complet rapporte ' + r.montantCentre + ' FCFA ; au-delà du quota, le surplus n\'est pas payé.</p>';
       }
-      box.innerHTML = '<h2>📊 Mon tableau de bord</h2>' + (per ? '<p class="hint">' + per + '</p>' : '') + '<table><thead><tr><th>Cible</th><th class="n">Validés</th><th class="n">Rejetés</th><th class="n">Objectif</th><th class="n">Reste à atteindre</th></tr></thead><tbody>' + rows + '</tbody></table>' + (rules ? '<p class="hint">' + rules + '</p>' : '') + rj + ctr;
+      box.innerHTML = '<h2>📊 Mon tableau de bord</h2>' + (per ? '<p class="hint">' + per + '</p>' : '') + '<table><thead><tr><th>Cible</th><th class="n">Validés</th><th class="n">Rejetés</th>' + (r.modeCentre ? '' : '<th class="n">Objectif</th><th class="n">Reste à atteindre</th>') + '</tr></thead><tbody>' + rows + '</tbody></table>' + (rules ? '<p class="hint">' + rules + '</p>' : '') + rj + ctr;
     }
     var cached = null; try { cached = JSON.parse(localStorage.getItem(ck) || 'null'); } catch (e) {}
     if (cached) draw(cached); else box.innerHTML = '<h2>📊 Mon tableau de bord</h2><p class="hint">Chargement…</p>';
