@@ -1,6 +1,15 @@
 // Configuration + accès enquêteur par code (un code par niveau : zone sanitaire / hôpital)
-const API_URL_DEFAULT = "https://script.google.com/macros/s/AKfycbwjB6aW_ksTbTJgf2n7-VXh7d2FPuTVQov8m6ZijLN5OPPSj4kEFqU1w08HowBs-GcWAw/exec";
+const API_URL_DEFAULT = "https://script.google.com/macros/s/AKfycbwbFgMu71sQhLWfLZSo7_UKLkCzy1sNnfju0Z6o0q9EFubPmXC101fxpY125wP8NKu18w/exec";
 // L'adresse du serveur peut être corrigée depuis la page Administration (stockée sur l'appareil)
+// Nouveau déploiement : si l'adresse d'origine a changé, on abandonne l'ancienne adresse corrigée à la main sur l'appareil
+(function () {
+  try {
+    if (localStorage.getItem("api_default_seen") !== API_URL_DEFAULT) {
+      localStorage.removeItem("api_url");
+      localStorage.setItem("api_default_seen", API_URL_DEFAULT);
+    }
+  } catch (e) {}
+})();
 function apiUrl() { return localStorage.getItem("api_url") || API_URL_DEFAULT; }
 const API_URL = API_URL_DEFAULT;
 const QR_KEYS = { zone: "qr_token_zone", hopital: "qr_token_hopital" };
