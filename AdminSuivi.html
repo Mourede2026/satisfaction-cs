@@ -89,9 +89,11 @@
     <button class="alt" id="shBtn" onclick="exportPng(true)" style="display:none">📤 Partager l'image</button>
    </div>
   </div>
-  <div class="tabs" id="tabs"><button id="t-suivi" class="on" onclick="tab('suivi')">📈 Suivi</button><button id="t-conf" onclick="tab('conf')">⚙️ Configuration</button></div>
+  <div class="tabs" id="tabs"><button id="t-suivi" class="on" onclick="tab('suivi')">📈 Suivi</button><button id="t-rej" onclick="tab('rej')">🚫 Rejets</button><button id="t-conf" onclick="tab('conf')">⚙️ Configuration</button></div>
 
   <div id="v-suivi"><div id="report"><div class="empty">Chargement…</div></div></div>
+
+  <div id="v-rej" style="display:none"></div>
 
   <div id="v-conf" style="display:none"></div>
  </div>
@@ -139,16 +141,57 @@
  }
  function pick(id){cur=id;cfg=null;data=null;if(view==='conf')loadConf();else refresh(true);}
  function tab(v){
-  view=v;$('t-suivi').className=v==='suivi'?'on':'';$('t-conf').className=v==='conf'?'on':'';
-  $('v-suivi').style.display=v==='suivi'?'block':'none';$('v-conf').style.display=v==='conf'?'block':'none';
+  view=v;$('t-suivi').className=v==='suivi'?'on':'';$('t-rej').className=v==='rej'?'on':'';$('t-conf').className=v==='conf'?'on':'';
+  $('v-suivi').style.display=v==='suivi'?'block':'none';$('v-rej').style.display=v==='rej'?'block':'none';$('v-conf').style.display=v==='conf'?'block':'none';
   $('expBtn').style.display=$('shBtn').style.display=(v==='suivi')?'':'none';if(v==='suivi'&&!(navigator.canShare&&navigator.share))$('shBtn').style.display='none';
-  if(v==='conf'&&!cfg)loadConf();else if(v==='suivi')refresh(true);
+  if(v==='conf'&&!cfg)loadConf();else if(v==='suivi')refresh(true);else if(v==='rej'){if(data)drawRej();else refresh(true);}
  }
  function refresh(manual){
   if(!cur)return;
-  api('suiviGet',{actId:cur}).then(function(r){data=r;err('');if(view==='suivi')drawReport();}).catch(function(e){err(e.message);});
+  api('suiviGet',{actId:cur}).then(function(r){data=r;err('');if(view==='suivi')drawReport();else if(view==='rej')drawRej();}).catch(function(e){err(e.message);});
  }
  setInterval(function(){if($('auto')&&$('auto').checked&&tok&&view==='suivi'&&!document.hidden)refresh(false);},60000);
+
+
+ /* ---------- Rapport des rejets ---------- */
+ var rejFilter='';
+ function fmtDur(sec){sec=Math.round(sec);var neg=sec<0;sec=Math.abs(sec);var m=Math.floor(sec/60),r=sec%60;return (neg?'-':'')+(m?m+' min ':'')+r+' s';}
+ function frHMS(iso){var d=new Date(iso);return isNaN(d)?'':d.toLocaleDateString('fr-FR')+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});}
+ function telLbl(n,code){return n?('Téléphone '+n+(code?' (…'+esc(code)+')':'')):'Téléphone non identifié';}
+ function motifTxt(r){
+  if(r.m==='duree')return {t:'Durée trop courte',d:'Le questionnaire a duré '+fmtDur(r.dur)+' ; minimum exigé : '+num(r.min,1)+' min.'};
+  if(r.m==='intervalle')return {t:'Intervalle trop court',d:(r.gap<0?'Commencé '+fmtDur(-r.gap)+' AVANT la fin du précédent (chevauchement)':'Commencé '+fmtDur(r.gap)+' après la fin du précédent')+' sur le même téléphone (précédent terminé le '+frHMS(r.prevEnd)+') ; minimum exigé : '+num(r.min,1)+' min.'};
+  return {t:'Plafond journalier',d:'Ce téléphone avait déjà validé '+r.cap+' questionnaires ce jour-là pour ce centre et cette cible (plafond).'};
+ }
+ function allRej(){var out=[];((data&&data.enqueteurs)||[]).forEach(function(e){(e.rejets||[]).forEach(function(r){out.push({e:e,r:r});});});out.sort(function(a,b){return a.r.s<b.r.s?-1:1;});return out;}
+ function drawRej(){
+  var d=data,box=$('v-rej');if(!d){box.innerHTML='<div class="empty">Chargement…</div>';return;}
+  var list=d.enqueteurs||[],h='<h1>Questionnaires rejetés</h1><p class="sub">'+esc(d.activity.name)+' · Situation au '+frDT(d.generatedAt)+'</p>';
+  h+='<div class="box"><h2>Comment lire ce rapport</h2><p class="hint">Un questionnaire rejeté est bien enregistré, mais n\'est pas compté pour le gain de l\'enquêteur. Le contrôle se fait <b>téléphone par téléphone</b> : le même compte peut être utilisé sur plusieurs téléphones qui collectent en même temps, sans rejet. Trois motifs existent : <b>durée trop courte</b>, <b>intervalle trop court</b> avec le questionnaire précédent <b>du même téléphone</b>, et <b>plafond journalier</b> d\'un téléphone pour un centre.<br>Un téléphone est reconnu grâce à un identifiant créé automatiquement à sa première utilisation de l\'application et envoyé avec chaque réponse (les 4 derniers caractères sont affichés pour les distinguer). Si l\'enquêteur vide les données du navigateur ou réinstalle l\'application, le téléphone reçoit un nouvel identifiant et apparaît comme un nouveau téléphone. Les anciennes réponses sans identifiant sont indiquées « non identifié » et ne sont pas soumises au contrôle d\'intervalle.</p></div>';
+  var tot=0,v=0;list.forEach(function(e){tot+=e.nbRej;v+=e.nbValid;});
+  h+='<div class="kpis"><div class="kpi"><b>'+num(v)+'</b><span>Questionnaires validés</span></div><div class="kpi"><b>'+num(tot)+'</b><span>Questionnaires rejetés</span></div></div>';
+  h+='<div class="box"><h2>Par enquêteur et par téléphone</h2><div class="scroll"><table><thead><tr><th>N°</th><th>Enquêteur</th><th>Téléphone</th><th>Premier début</th><th>Dernière fin</th><th class="n">Reçus</th><th class="n">Validés</th><th class="n">Rejetés</th></tr></thead><tbody>';
+  var any=false;
+  list.filter(function(e){return (e.appareils||[]).length;}).forEach(function(e){
+   e.appareils.forEach(function(ap,i){any=true;
+    h+='<tr>'+(i===0?'<td rowspan="'+e.appareils.length+'">'+esc(e.numero||'—')+'</td><td rowspan="'+e.appareils.length+'"><b>'+esc(e.name)+'</b> <small style="color:#6b7280">'+esc(e.nom)+'</small><br><small style="color:#6b7280">Compte : '+num(e.nbValid)+' validés · '+num(e.nbRej)+' rejetés</small></td>':'')+
+     '<td>'+telLbl(ap.n,ap.code)+'</td><td>'+(ap.first?frHMS(ap.first):'—')+'</td><td>'+(ap.last?frHMS(ap.last):'—')+'</td><td class="n">'+num(ap.total)+'</td><td class="n">'+num(ap.valid)+'</td><td class="n">'+(ap.rej?'<span class="pill p-bad">'+num(ap.rej)+'</span>':'0')+'</td></tr>';});
+  });
+  if(!any)h+='<tr><td colspan="8" class="empty">Aucune réponse pour le moment.</td></tr>';
+  h+='</tbody></table></div></div>';
+  var rows=allRej();
+  h+='<div class="box"><h2>Détail des questionnaires rejetés ('+rows.length+')</h2><div class="row"><select id="rejSel" onchange="rejFilter=this.value;drawRej()"><option value="">Tous les enquêteurs</option>'+list.filter(function(e){return e.nbRej>0;}).map(function(e){var k=e.key||e.id||e.name;return '<option value="'+esc(k)+'"'+(rejFilter===k?' selected':'')+'>'+esc(e.name+' '+(e.nom||''))+' ('+e.nbRej+')</option>';}).join('')+'</select><button class="alt" onclick="exportRejCsv()">⬇️ Télécharger (CSV)</button></div>';
+  if(rejFilter)rows=rows.filter(function(x){return (x.e.key||x.e.id||x.e.name)===rejFilter;});
+  h+='<div class="scroll" style="margin-top:10px"><table><thead><tr><th>Enquêteur</th><th>Téléphone</th><th>Formulaire</th><th>Centre</th><th>Début</th><th>Fin</th><th>Motif du rejet</th></tr></thead><tbody>'+
+   (rows.length?rows.map(function(x){var m=motifTxt(x.r);return '<tr><td><b>'+esc(x.e.name)+'</b> <small style="color:#6b7280">'+esc(x.e.nom||'')+'</small></td><td>'+telLbl(x.r.tel,x.r.code)+'</td><td>'+esc(FORM_LBL[x.r.f]||x.r.f)+'</td><td>'+esc(x.r.c||'—')+'</td><td>'+frHMS(x.r.s)+'</td><td>'+frHMS(x.r.e)+'</td><td><span class="pill p-bad">'+m.t+'</span><br><small>'+esc(m.d)+'</small></td></tr>';}).join(''):'<tr><td colspan="7" class="empty">Aucun questionnaire rejeté.</td></tr>')+'</tbody></table></div>';
+  if(list.some(function(e){return (e.rejets||[]).length>=500;}))h+='<p class="hint">La liste est limitée à 500 rejets par enquêteur.</p>';
+  box.innerHTML=h+'</div>';
+ }
+ function exportRejCsv(){
+  var q=function(x){return '"'+String(x==null?'':x).replace(/"/g,'""')+'"';},L=[['Numéro','Prénom','Nom','Téléphone','Code téléphone','Formulaire','Centre','Début','Fin','Motif','Détail'].map(q).join(';')];
+  allRej().forEach(function(x){var m=motifTxt(x.r);L.push([x.e.numero,x.e.name,x.e.nom,x.r.tel?('Téléphone '+x.r.tel):'Non identifié',x.r.code,FORM_LBL[x.r.f]||x.r.f,x.r.c,frHMS(x.r.s),frHMS(x.r.e),m.t,m.d].map(q).join(';'));});
+  saveBlob(new Blob(['\ufeff'+L.join('\r\n')],{type:'text/csv;charset=utf-8'}),'rejets_'+slug((data&&data.activity&&data.activity.name)||'activite')+'.csv');
+ }
 
  /* ---------- Graphique SVG ---------- */
  function lineChart(days,series,W,H){
@@ -303,10 +346,11 @@
    st.forms.map(function(f){return '<label class="l" style="margin-top:8px">Quota par centre : '+esc(FORM_LBL[f]||f)+'</label><input data-q="'+f+'" inputmode="numeric" value="'+esc(st.quotas[f]||'')+'" placeholder="Ex. '+(f==='cogecs'?'3':'60')+'" style="max-width:200px">';}).join('')+
    '<label class="l">Montant d\'un centre complet (FCFA)</label><input id="montantCentre" inputmode="numeric" value="'+esc(st.montantCentre)+'" placeholder="Ex. 10000" style="max-width:200px">'+
    '<label class="l">Nombre total de centres à enquêter dans l\'activité (facultatif, pour le budget prévu)</label><input id="nbCentres" inputmode="numeric" value="'+esc(st.nbCentres)+'" placeholder="Ex. 120" style="max-width:200px"></div>';
-  h+='<div class="box"><h2>⏱️ Validation des questionnaires</h2><p class="hint">Un questionnaire n\'est <b>pris en compte pour le gain de l\'enquêteur</b> que si les deux minimums sont respectés. Les autres sont enregistrés mais comptés comme rejetés. Laissez vide ou 0 pour ne pas appliquer le contrôle.</p>'+
-   '<label class="l" for="dureeMin" style="margin-top:0">Durée minimale d\'un questionnaire (début → fin), en minutes</label><input id="dureeMin" inputmode="decimal" value="'+esc(st.dureeMin)+'" placeholder="Ex. 5" style="max-width:200px">'+
-   '<label class="l" for="intervalleMin">Intervalle minimal entre la fin d\'un questionnaire et le début du suivant, en minutes</label><input id="intervalleMin" inputmode="decimal" value="'+esc(st.intervalleMin)+'" placeholder="Ex. 2" style="max-width:200px">'+
-   '<label class="l" for="plafondPct">Part maximale qu\'un même téléphone peut valider par jour et par centre, en % du quota du centre (ex. 75)</label><input id="plafondPct" inputmode="decimal" value="'+esc(st.plafondPct)+'" placeholder="Ex. 75" style="max-width:200px"><div class="hint" id="plafPrev" style="margin-top:8px"></div></div>';
+  h+='<div class="box"><h2>⏱️ Validation des questionnaires</h2><p class="hint">Un questionnaire n\'est <b>pris en compte pour le gain de l\'enquêteur</b> que s\'il respecte les règles ci-dessous. Les autres sont enregistrés mais comptés comme rejetés ; la liste précise (enquêteur, téléphone, début, fin, motif) est dans l\'onglet <b>🚫 Rejets</b>. Laissez vide ou 0 pour ne pas appliquer une règle.</p>'+
+   '<div class="hint" style="background:#f3f7fb;border-radius:10px;padding:10px 12px;margin:10px 0"><b>Un compte, plusieurs téléphones.</b> Le contrôle se fait <b>téléphone par téléphone</b>. Chaque téléphone reçoit automatiquement un identifiant à sa première utilisation de l\'application et l\'envoie avec chaque réponse. Ainsi, <b>deux téléphones du même compte peuvent collecter en même temps</b> (chevauchement ou quelques secondes d\'écart) sans rejet ; les règles 2 et 3 ne s\'appliquent qu\'entre deux questionnaires du <b>même</b> téléphone. Le tableau de bord additionne ensuite les résultats de tous les téléphones du compte.</div>'+
+   '<label class="l" for="dureeMin" style="margin-top:0">1. Durée minimale d\'un questionnaire (début → fin), en minutes — vérifiée sur chaque questionnaire</label><input id="dureeMin" inputmode="decimal" value="'+esc(st.dureeMin)+'" placeholder="Ex. 5" style="max-width:200px">'+
+   '<label class="l" for="intervalleMin">2. Intervalle minimal entre la fin d\'un questionnaire et le début du suivant, en minutes — <u>sur le même téléphone seulement</u></label><input id="intervalleMin" inputmode="decimal" value="'+esc(st.intervalleMin)+'" placeholder="Ex. 2" style="max-width:200px">'+
+   '<label class="l" for="plafondPct">3. Part maximale qu\'un même téléphone peut valider par jour et par centre, en % du quota du centre (ex. 75)</label><input id="plafondPct" inputmode="decimal" value="'+esc(st.plafondPct)+'" placeholder="Ex. 75" style="max-width:200px"><div class="hint" id="plafPrev" style="margin-top:8px"></div></div>';
   h+='<div class="box"><h2>💰 Montant total à payer</h2><p class="hint">Montant total prévu pour tous les enquêteurs de l\'activité (en FCFA). Il est réparti à parts égales entre les enquêteurs inscrits. Un enquêteur qui n\'atteint pas l\'objectif attendu perçoit son per diem au prorata du nombre de questionnaires réalisés.</p>'+
    '<label class="l" for="montant" style="margin-top:0">Montant total à payer (FCFA)</label><input id="montant" inputmode="numeric" value="'+esc(st.montant)+'" placeholder="Ex. 1500000" style="max-width:340px"><div id="montantPrev" class="hint" style="margin-top:8px"></div></div>';
   if(adm){
