@@ -441,6 +441,13 @@ function pwdColIndex_() {
   for (var i = 0; i < h.length; i++) if (String(h[i]).trim() === 'MotDePasseInitial') return i;
   return -1;
 }
+/** Écrit le mot de passe en clair dans la colonne « MotDePasseInitial » (créée si absente), en format texte,
+ *  pour qu'il reste visible et modifiable dans la feuille Comptes. */
+function setPlainPwd_(row, pwd) {
+  var sh = accountsSheet_(), pc = pwdColIndex_();
+  if (pc < 0) { pc = Math.max(sh.getLastColumn(), 10); sh.getRange(1, pc + 1).setValue('MotDePasseInitial'); }
+  sh.getRange(row, pc + 1).setNumberFormat('@').setValue(String(pwd));
+}
 var ACCOUNTS_HEADERS = ['Identifiant', 'Hash', 'Niveau', 'Département', 'Zone Sanitaire', 'Commune', 'Libellé', 'DernièreModification', 'Actif', '', 'MotDePasseInitial'];
 function findAccountRow_(username) {
   var sh = getOrCreateSheet_(ACCOUNTS_SHEET_NAME, ACCOUNTS_HEADERS);
@@ -475,13 +482,13 @@ function handleAccountLogin(username, password) {
   if (!f) { loginEchec_(username); return { ok: false, error: 'Identifiant ou mot de passe incorrect.' }; }
   if (f.data[8] === 'NON') return { ok: false, error: 'Ce compte a été désactivé par un administrateur.' };
   // Mot de passe saisi directement dans la feuille « Comptes » (colonne K « MotDePasseInitial ») :
-  // vérifié une fois, converti en empreinte (hash) puis effacé de la feuille.
+  // vérifié à chaque connexion ; la cellule RESTE visible dans la feuille (modifier la cellule = changer le mot de passe).
+  // L'empreinte (hash) est tenue à jour en parallèle.
   var pc = pwdColIndex_(), plain = pc < 0 || f.data[pc] === undefined || f.data[pc] === null ? '' : String(f.data[pc]).trim();
   if (plain) {
     if (String(password).trim() !== plain) { loginEchec_(username); return { ok: false, error: 'Identifiant ou mot de passe incorrect.' }; }
     var sh = accountsSheet_();
     sh.getRange(f.row, 2).setValue(sha256Hex_(String(f.data[0]).trim() + ':' + String(password).trim()));
-    sh.getRange(f.row, pc + 1).clearContent();
     f.data[0] = String(f.data[0]).trim();
   } else if (sha256Hex_(String(f.data[0]).trim() + ':' + password) !== f.data[1]) { loginEchec_(username); return { ok: false, error: 'Identifiant ou mot de passe incorrect.' }; }
   return { ok: true, token: createSession_(String(f.data[0]).trim()), account: accountPublicView_(f.data) };
@@ -528,9 +535,11 @@ function handleChangePassword(token, oldPassword, newPassword) {
   if (!s) return { ok: false, error: 'Session invalide ou expirée, reconnectez-vous.' };
   if (!newPassword || String(newPassword).length < 8) return { ok: false, error: 'Le nouveau mot de passe doit contenir au moins 8 caractères.' };
   var f = findAccountRow_(s.username); if (!f) return { ok: false, error: 'Compte introuvable.' };
-  if (sha256Hex_(s.username + ':' + oldPassword) !== f.data[1]) return { ok: false, error: 'Ancien mot de passe incorrect.' };
+  var _pc = pwdColIndex_(), _pl = _pc < 0 || f.data[_pc] == null ? '' : String(f.data[_pc]).trim();
+  if (_pl ? String(oldPassword).trim() !== _pl : sha256Hex_(s.username + ':' + oldPassword) !== f.data[1]) return { ok: false, error: 'Ancien mot de passe incorrect.' };
   var sh = accountsSheet_();
   sh.getRange(f.row, 2).setValue(sha256Hex_(s.username + ':' + newPassword));
+  setPlainPwd_(f.row, newPassword);
   sh.getRange(f.row, 8).setValue(new Date().toISOString());
   return { ok: true };
 }
@@ -542,7 +551,8 @@ function handleChangeUsername(token, currentPassword, newUsername) {
   var s = token ? findSession_(token) : null;
   if (!s) return { ok: false, error: 'Session invalide ou expirée, reconnectez-vous.' };
   var f = findAccountRow_(s.username); if (!f) return { ok: false, error: 'Compte introuvable.' };
-  if (sha256Hex_(s.username + ':' + currentPassword) !== f.data[1]) return { ok: false, error: 'Mot de passe incorrect.' };
+  var _pc2 = pwdColIndex_(), _pl2 = _pc2 < 0 || f.data[_pc2] == null ? '' : String(f.data[_pc2]).trim();
+  if (_pl2 ? String(currentPassword).trim() !== _pl2 : sha256Hex_(s.username + ':' + currentPassword) !== f.data[1]) return { ok: false, error: 'Mot de passe incorrect.' };
   newUsername = (newUsername || '').toString().trim();
   if (!newUsername) return { ok: false, error: 'Identifiant vide.' };
   if (newUsername === s.username) return { ok: false, error: "C'est déjà votre identifiant actuel." };
@@ -550,6 +560,7 @@ function handleChangeUsername(token, currentPassword, newUsername) {
   var sh = accountsSheet_();
   sh.getRange(f.row, 1).setValue(newUsername);
   sh.getRange(f.row, 2).setValue(sha256Hex_(newUsername + ':' + currentPassword));
+  setPlainPwd_(f.row, currentPassword);
   sh.getRange(f.row, 8).setValue(new Date().toISOString());
   invalidateSessionsForUser_(s.username);
   var d = f.data.slice(); d[0] = newUsername;
@@ -836,8 +847,8 @@ function applyScopeToResult_(result, account) {
 function reinitialiserMotDePasseAdmin() {
   var pwd = Utilities.getUuid().replace(/-/g, '').slice(0, 10), f = findAccountRow_('admin');
   var sh = getOrCreateSheet_(ACCOUNTS_SHEET_NAME, ['Identifiant', 'Hash', 'Niveau', 'Département', 'Zone Sanitaire', 'Commune', 'Libellé', 'DernièreModification', 'Actif']);
-  if (!f) sh.appendRow(['admin', sha256Hex_('admin:' + pwd), 'admin', '', '', '', 'Administrateur', '', 'OUI']);
-  else { sh.getRange(f.row, 2).setValue(sha256Hex_('admin:' + pwd)); sh.getRange(f.row, 3).setValue('admin'); sh.getRange(f.row, 9).setValue('OUI'); }
+  if (!f) { sh.appendRow(['admin', sha256Hex_('admin:' + pwd), 'admin', '', '', '', 'Administrateur', '', 'OUI']); setPlainPwd_(sh.getLastRow(), pwd); }
+  else { sh.getRange(f.row, 2).setValue(sha256Hex_('admin:' + pwd)); sh.getRange(f.row, 3).setValue('admin'); sh.getRange(f.row, 9).setValue('OUI'); setPlainPwd_(f.row, pwd); }
   Logger.log('Identifiant : admin — Nouveau mot de passe : ' + pwd);
 }
 
@@ -1460,10 +1471,12 @@ function suiviCompute_(act) {
       var bad = false; if (it.dev) devs[it.dev] = 1;
       if (it.c) { var ca = e.centresAll[it.c] = e.centresAll[it.c] || { label: it.cl, tot: {} }; ca.tot[it.f] = (ca.tot[it.f] || 0) + 1; }
       if (!isNaN(it.s) && !isNaN(it.e)) {
-        // l'intervalle se mesure par téléphone : un même compte peut collecter sur plusieurs téléphones en même temps
+        // L'analyse se fait téléphone par téléphone (un même compte peut être utilisé sur plusieurs téléphones, qui collectent en même temps) ;
+        // le résultat est ensuite regroupé sur le compte (tableau de bord général). Sans identifiant de téléphone (anciennes réponses), on ne peut pas
+        // savoir de quel téléphone il s'agit : l'intervalle n'est pas évalué (on ne mélange jamais deux téléphones inconnus).
         if (mins.duree > 0 && (it.e - it.s) / 60000 < mins.duree) { bad = true; e.rejDuree++; }
-        else if (mins.intervalle > 0 && prevEnd[it.dev] !== undefined && (it.s - prevEnd[it.dev]) / 60000 < mins.intervalle) { bad = true; e.rejInterv++; }
-        prevEnd[it.dev] = it.e;
+        else if (mins.intervalle > 0 && it.dev && prevEnd[it.dev] !== undefined && (it.s - prevEnd[it.dev]) / 60000 < mins.intervalle) { bad = true; e.rejInterv++; }
+        if (it.dev) prevEnd[it.dev] = (prevEnd[it.dev] === undefined) ? it.e : Math.max(prevEnd[it.dev], it.e);
         // plafond : un même téléphone ne peut pas valider plus de (taille du centre × %) questionnaires par jour, pour un même centre (structure) et une même cible ; les autres centres comptent à part
         var capF = (it.f === 'cogecs') ? 0 : (quotas[it.f] ? Math.floor(quotas[it.f] * mins.pct / 100) : mins.plafond);
         if (!bad && capF > 0 && mins.pct > 0 && it.dev && it.c) { // pas de plafond pour les COGECS (3 par centre seulement)
@@ -1653,6 +1666,7 @@ function handleCreateSupervisor(token, username, label, password) {
     if (findAccountRow_(username)) return { ok: false, error: 'Cet identifiant existe déjà.' };
     var sh = accountsSheet_(), row = sh.getLastRow() + 1;
     sh.getRange(row, 1, 1, 9).setNumberFormat('@').setValues([[username, sha256Hex_(username + ':' + password), SUP_LEVEL, '', '', '', label, new Date().toISOString(), 'OUI']]);
+    setPlainPwd_(row, password);
     return { ok: true, username: username, label: label };
   } finally { lock.releaseLock(); }
 }
@@ -1660,7 +1674,7 @@ function handleSetSupervisorPassword(token, username, password) {
   var c = requireAdminSession_(token); if (!c.ok) return c;
   if (String(password || '').length < 8) return { ok: false, error: 'Le mot de passe doit contenir au moins 8 caractères.' };
   var f = findAccountRow_(username); if (!f || String(f.data[2]) !== SUP_LEVEL) return { ok: false, error: 'Compte superviseur introuvable.' };
-  var sh = accountsSheet_(); sh.getRange(f.row, 2).setValue(sha256Hex_(String(f.data[0]).trim() + ':' + password)); sh.getRange(f.row, 8).setValue(new Date().toISOString());
+  var sh = accountsSheet_(); sh.getRange(f.row, 2).setValue(sha256Hex_(String(f.data[0]).trim() + ':' + password)); setPlainPwd_(f.row, password); sh.getRange(f.row, 8).setValue(new Date().toISOString());
   invalidateSessionsForUser_(String(f.data[0]).trim());
   return { ok: true };
 }
