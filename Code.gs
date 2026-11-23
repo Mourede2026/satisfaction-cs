@@ -1455,9 +1455,10 @@ function suiviCompute_(act) {
   // Un questionnaire sans horodatage (anciennes réponses) ne peut pas être évalué : il reste valide.
   order.forEach(function (k) {
     var e = enq[k], its = (e.items || []).slice().sort(function (a, b) { return (isNaN(a.s) ? 0 : a.s) - (isNaN(b.s) ? 0 : b.s); }), prevEnd;
-    e.valid = {}; e.rej = {}; e.rejDuree = 0; e.rejInterv = 0; e.rejPlafond = 0; e.centres = {}; var perDay = {}, devs = {}; prevEnd = {};
+    e.valid = {}; e.rej = {}; e.rejDuree = 0; e.rejInterv = 0; e.rejPlafond = 0; e.centres = {}; e.centresAll = {}; var perDay = {}, devs = {}; prevEnd = {};
     its.forEach(function (it) {
       var bad = false; if (it.dev) devs[it.dev] = 1;
+      if (it.c) { var ca = e.centresAll[it.c] = e.centresAll[it.c] || { label: it.cl, tot: {} }; ca.tot[it.f] = (ca.tot[it.f] || 0) + 1; }
       if (!isNaN(it.s) && !isNaN(it.e)) {
         // l'intervalle se mesure par téléphone : un même compte peut collecter sur plusieurs téléphones en même temps
         if (mins.duree > 0 && (it.e - it.s) / 60000 < mins.duree) { bad = true; e.rejDuree++; }
@@ -1487,6 +1488,18 @@ function suiviCompute_(act) {
   var formsKeys = srcs.map(function (x) { return x[0]; });
   var list = order.map(function (k) {
     var e = enq[k], total = 0, obj = 0, hasObj = false, f;
+    // Objectif = quota d'un centre × nombre de centres réellement enquêtés par cet enquêteur (au moins 1 : le centre en cours)
+    var qS = 0; formsKeys.forEach(function (fk) { qS += quotas[fk] || 0; });
+    var cKeys = Object.keys(e.centresAll || {}), nc = cKeys.length, cd = [];
+    if (qS > 0) {
+      e.objByForm = {}; formsKeys.forEach(function (fk) { if (quotas[fk]) e.objByForm[fk] = quotas[fk] * Math.max(1, nc); });
+      cKeys.forEach(function (ck) {
+        var ca = e.centresAll[ck], cv = (e.centres[ck] && e.centres[ck].valid) || {}, got = 0, det = {};
+        formsKeys.forEach(function (fk) { var q = quotas[fk] || 0, v = cv[fk] || 0; if (q > 0) { got += Math.min(v, q); det[fk] = { valides: v, total: ca.tot[fk] || 0, quota: q }; } });
+        cd.push({ centre: ca.label, cibles: det, complet: got >= qS, pct: Math.round(got / qS * 1000) / 10, montant: mins.montantCentre > 0 ? Math.round(mins.montantCentre * got / qS) : 0 });
+      });
+      cd.sort(function (a, b) { return String(a.centre).localeCompare(String(b.centre), 'fr'); });
+    }
     formsKeys.forEach(function (fk) { total += e.byForm[fk] || 0; if (e.objByForm[fk] !== undefined) { obj += e.objByForm[fk]; hasObj = true; } });
     var run = 0, cumul = days.map(function (d) { run += e.daily[d] || 0; return run; });
     var before = 0; Object.keys(e.daily).forEach(function (d) { if (d < start) before += e.daily[d]; }); // réponses datées avant le début (comptées au 1er jour)
@@ -1494,7 +1507,7 @@ function suiviCompute_(act) {
     var attendu = (hasObj && totalDays) ? Math.round(obj * Math.min(elapsed, totalDays) / totalDays * 10) / 10 : null;
     var restant = hasObj ? Math.max(0, obj - total) : null, joursRest = totalDays ? Math.max(0, totalDays - elapsed) : null;
     var retenu = 0, nbValid = 0, nbRej = 0; formsKeys.forEach(function (fk) { retenu += Math.min(e.valid[fk] || 0, e.objByForm[fk] || 0); nbValid += e.valid[fk] || 0; nbRej += e.rej[fk] || 0; });
-    return { valid: e.valid, rej: e.rej, nbValid: nbValid, nbRej: nbRej, rejDuree: e.rejDuree, rejInterv: e.rejInterv, rejPlafond: e.rejPlafond, nbAppareils: e.nbAppareils, id: e.id, numero: e.numero, nom: e.nom, inscrit: e.inscrit, retenu: retenu, name: e.name, byForm: e.byForm, objByForm: e.objByForm, total: total, objectif: hasObj ? obj : null, attendu: attendu,
+    return { nbCentres: nc, centresDetail: cd, valid: e.valid, rej: e.rej, nbValid: nbValid, nbRej: nbRej, rejDuree: e.rejDuree, rejInterv: e.rejInterv, rejPlafond: e.rejPlafond, nbAppareils: e.nbAppareils, id: e.id, numero: e.numero, nom: e.nom, inscrit: e.inscrit, retenu: retenu, name: e.name, byForm: e.byForm, objByForm: e.objByForm, total: total, objectif: hasObj ? obj : null, attendu: attendu,
       pct: hasObj && obj > 0 ? Math.round(total / obj * 1000) / 10 : null, ecart: attendu !== null ? Math.round((total - attendu) * 10) / 10 : null,
       rythmeReel: elapsed > 0 ? Math.round(total / elapsed * 10) / 10 : null, rythmeRequis: (restant !== null && joursRest) ? Math.round(restant / joursRest * 10) / 10 : null,
       last: Object.keys(e.daily).sort().pop() || '', cumul: cumul };
@@ -1522,13 +1535,9 @@ function suiviCompute_(act) {
   if (mins.montantCentre > 0 && qSum > 0) {
     var dus2 = 0;
     list.forEach(function (e) {
-      var src = enq[e.id ? 'id:' + e.id : 'n:' + (strip_(e.name) || 'non renseigne')]; e.centresDetail = []; e.aPayer = 0; var tot = 0;
-      Object.keys(src.centres || {}).forEach(function (ck) {
-        var ce = src.centres[ck], got = 0, det = {}; formsKeys.forEach(function (fk) { var q = quotas[fk] || 0, v = ce.valid[fk] || 0; if (q > 0) { got += Math.min(v, q); det[fk] = { valides: v, quota: q }; } });
-        var m = Math.round(mins.montantCentre * got / qSum); tot += m; e.centresDetail.push({ centre: ce.label, cibles: det, complet: got >= qSum, montant: m });
-      });
-      e.centresDetail.sort(function (a, b) { return String(a.centre).localeCompare(String(b.centre), 'fr'); });
-      e.nbCentres = e.centresDetail.length; if (e.inscrit) { e.aPayer = tot; dus2 += tot; } e.retenu = 0; formsKeys.forEach(function (fk) { Object.keys(src.centres || {}).forEach(function (ck) { e.retenu += Math.min(src.centres[ck].valid[fk] || 0, quotas[fk] || 0); }); });
+      var src = enq[e.id ? 'id:' + e.id : 'n:' + (strip_(e.name) || 'non renseigne')]; e.aPayer = 0; var tot = 0;
+      (e.centresDetail || []).forEach(function (c) { tot += c.montant; });
+      if (e.inscrit) { e.aPayer = tot; dus2 += tot; } e.retenu = 0; formsKeys.forEach(function (fk) { Object.keys(src.centres || {}).forEach(function (ck) { e.retenu += Math.min(src.centres[ck].valid[fk] || 0, quotas[fk] || 0); }); });
     });
     var touches = {}, complets = {};
     list.forEach(function (e) { (e.centresDetail || []).forEach(function (c) { var k = strip_(c.centre); touches[k] = 1; if (c.complet) complets[k] = 1; }); });
