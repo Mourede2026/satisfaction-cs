@@ -1467,28 +1467,46 @@ function suiviCompute_(act) {
   order.forEach(function (k) {
     var e = enq[k], its = (e.items || []).slice().sort(function (a, b) { return (isNaN(a.s) ? 0 : a.s) - (isNaN(b.s) ? 0 : b.s); }), prevEnd;
     e.valid = {}; e.rej = {}; e.rejDuree = 0; e.rejInterv = 0; e.rejPlafond = 0; e.centres = {}; e.centresAll = {}; var perDay = {}, devs = {}; prevEnd = {};
+    var devInfo = {}, devOrder = []; e.rejets = [];
     its.forEach(function (it) {
-      var bad = false; if (it.dev) devs[it.dev] = 1;
+      var bad = false, rj = null, dkey = it.dev || '?'; if (it.dev) devs[it.dev] = 1;
+      if (!devInfo[dkey]) { devInfo[dkey] = { code: it.dev, total: 0, valid: 0, rej: 0, first: it.s, last: it.e, n: 0 }; devOrder.push(dkey); }
       if (it.c) { var ca = e.centresAll[it.c] = e.centresAll[it.c] || { label: it.cl, tot: {} }; ca.tot[it.f] = (ca.tot[it.f] || 0) + 1; }
       if (!isNaN(it.s) && !isNaN(it.e)) {
         // L'analyse se fait téléphone par téléphone (un même compte peut être utilisé sur plusieurs téléphones, qui collectent en même temps) ;
         // le résultat est ensuite regroupé sur le compte (tableau de bord général). Sans identifiant de téléphone (anciennes réponses), on ne peut pas
         // savoir de quel téléphone il s'agit : l'intervalle n'est pas évalué (on ne mélange jamais deux téléphones inconnus).
-        if (mins.duree > 0 && (it.e - it.s) / 60000 < mins.duree) { bad = true; e.rejDuree++; }
-        else if (mins.intervalle > 0 && it.dev && prevEnd[it.dev] !== undefined && (it.s - prevEnd[it.dev]) / 60000 < mins.intervalle) { bad = true; e.rejInterv++; }
-        if (it.dev) prevEnd[it.dev] = (prevEnd[it.dev] === undefined) ? it.e : Math.max(prevEnd[it.dev], it.e);
-        // plafond : un même téléphone ne peut pas valider plus de (taille du centre × %) questionnaires par jour, pour un même centre (structure) et une même cible ; les autres centres comptent à part
-        var capF = (it.f === 'cogecs') ? 0 : (quotas[it.f] ? Math.floor(quotas[it.f] * mins.pct / 100) : mins.plafond);
-        if (!bad && capF > 0 && mins.pct > 0 && it.dev && it.c) { // pas de plafond pour les COGECS (3 par centre seulement)
-          var pk = it.dev + '|' + Utilities.formatDate(new Date(it.s), Session.getScriptTimeZone(), 'yyyy-MM-dd') + '|' + it.c + '|' + it.f;
-          if ((perDay[pk] || 0) >= Math.max(1, capF)) { bad = true; e.rejPlafond++; } else perDay[pk] = (perDay[pk] || 0) + 1;
+        // Seuls les questionnaires USAGERS (zones sanitaires) et USAGERS / COMMUNAUTÉ (hôpitaux) peuvent être rejetés.
+        // Tous les autres (COGECS…) ne sont jamais rejetés, quels que soient leur durée ou leur horaire, et ne comptent pas dans l'intervalle d'un téléphone.
+        var rejectable = (it.f === 'usagers' || it.f === 'communaute');
+        if (rejectable) {
+          if (mins.duree > 0 && (it.e - it.s) / 60000 < mins.duree) { bad = true; e.rejDuree++; rj = { m: 'duree', dur: Math.round((it.e - it.s) / 1000), min: mins.duree }; }
+          else if (mins.intervalle > 0 && it.dev && prevEnd[it.dev] !== undefined && (it.s - prevEnd[it.dev]) / 60000 < mins.intervalle) { bad = true; e.rejInterv++; rj = { m: 'intervalle', gap: Math.round((it.s - prevEnd[it.dev]) / 1000), prevEnd: new Date(prevEnd[it.dev]).toISOString(), min: mins.intervalle }; }
+          if (it.dev) prevEnd[it.dev] = (prevEnd[it.dev] === undefined) ? it.e : Math.max(prevEnd[it.dev], it.e);
+          // plafond : un même téléphone ne peut pas valider plus de (taille du centre × %) questionnaires par jour, pour un même centre et une même cible
+          var capF = quotas[it.f] ? Math.floor(quotas[it.f] * mins.pct / 100) : mins.plafond;
+          if (!bad && capF > 0 && mins.pct > 0 && it.dev && it.c) {
+            var pk = it.dev + '|' + Utilities.formatDate(new Date(it.s), Session.getScriptTimeZone(), 'yyyy-MM-dd') + '|' + it.c + '|' + it.f;
+            if ((perDay[pk] || 0) >= Math.max(1, capF)) { bad = true; e.rejPlafond++; rj = { m: 'plafond', cap: Math.max(1, capF) }; } else perDay[pk] = (perDay[pk] || 0) + 1;
+          }
         }
       }
-      if (bad) e.rej[it.f] = (e.rej[it.f] || 0) + 1; else {
+      var di = devInfo[dkey]; di.total++; if (bad) di.rej++; else di.valid++; if (!isNaN(it.s) && (isNaN(di.first) || it.s < di.first)) di.first = it.s; if (!isNaN(it.e) && (isNaN(di.last) || it.e > di.last)) di.last = it.e;
+      if (bad) {
+        e.rej[it.f] = (e.rej[it.f] || 0) + 1;
+        if (e.rejets.length < 500) { rj.f = it.f; rj.dkey = dkey; rj.c = it.cl; rj.s = new Date(it.s).toISOString(); rj.e = new Date(it.e).toISOString(); e.rejets.push(rj); }
+      } else {
         e.valid[it.f] = (e.valid[it.f] || 0) + 1;
         if (it.c) { var ce = e.centres[it.c] = e.centres[it.c] || { label: it.cl, valid: {} }; ce.valid[it.f] = (ce.valid[it.f] || 0) + 1; }
       }
     });
+    // Numérotation des téléphones de ce compte (Téléphone 1, 2…) dans l'ordre de première utilisation ; 0 = identifiant inconnu (anciennes réponses)
+    var known = devOrder.filter(function (k) { return k !== '?'; }).sort(function (x, y) { return (devInfo[x].first || 0) - (devInfo[y].first || 0); }), nn = 0;
+    known.forEach(function (k) { devInfo[k].n = ++nn; });
+    e.appareils = known.concat(devInfo['?'] ? ['?'] : []).map(function (k) {
+      var d = devInfo[k]; return { n: d.n, code: d.code ? String(d.code).slice(-4) : '', total: d.total, valid: d.valid, rej: d.rej, first: isNaN(d.first) ? '' : new Date(d.first).toISOString(), last: isNaN(d.last) ? '' : new Date(d.last).toISOString() };
+    });
+    e.rejets.forEach(function (r) { r.tel = devInfo[r.dkey].n; r.code = devInfo[r.dkey].code ? String(devInfo[r.dkey].code).slice(-4) : ''; delete r.dkey; });
     e.nbAppareils = Object.keys(devs).length;
   });
   // période
@@ -1520,7 +1538,7 @@ function suiviCompute_(act) {
     var attendu = (hasObj && totalDays) ? Math.round(obj * Math.min(elapsed, totalDays) / totalDays * 10) / 10 : null;
     var restant = hasObj ? Math.max(0, obj - total) : null, joursRest = totalDays ? Math.max(0, totalDays - elapsed) : null;
     var retenu = 0, nbValid = 0, nbRej = 0; formsKeys.forEach(function (fk) { retenu += Math.min(e.valid[fk] || 0, e.objByForm[fk] || 0); nbValid += e.valid[fk] || 0; nbRej += e.rej[fk] || 0; });
-    return { nbCentres: nc, centresDetail: cd, valid: e.valid, rej: e.rej, nbValid: nbValid, nbRej: nbRej, rejDuree: e.rejDuree, rejInterv: e.rejInterv, rejPlafond: e.rejPlafond, nbAppareils: e.nbAppareils, id: e.id, numero: e.numero, nom: e.nom, inscrit: e.inscrit, retenu: retenu, name: e.name, byForm: e.byForm, objByForm: e.objByForm, total: total, objectif: hasObj ? obj : null, attendu: attendu,
+    return { nbCentres: nc, centresDetail: cd, valid: e.valid, rej: e.rej, nbValid: nbValid, nbRej: nbRej, rejDuree: e.rejDuree, rejInterv: e.rejInterv, rejPlafond: e.rejPlafond, nbAppareils: e.nbAppareils, appareils: e.appareils, rejets: e.rejets, id: e.id, numero: e.numero, nom: e.nom, inscrit: e.inscrit, retenu: retenu, name: e.name, byForm: e.byForm, objByForm: e.objByForm, total: total, objectif: hasObj ? obj : null, attendu: attendu,
       pct: hasObj && obj > 0 ? Math.round(total / obj * 1000) / 10 : null, ecart: attendu !== null ? Math.round((total - attendu) * 10) / 10 : null,
       rythmeReel: elapsed > 0 ? Math.round(total / elapsed * 10) / 10 : null, rythmeRequis: (restant !== null && joursRest) ? Math.round(restant / joursRest * 10) / 10 : null,
       last: Object.keys(e.daily).sort().pop() || '', cumul: cumul };
