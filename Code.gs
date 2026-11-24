@@ -1568,6 +1568,9 @@ function suiviCompute_(act) {
   var totalDays = (act.debut && act.fin) ? Math.max(1, daysBetween_(act.debut, act.fin) + 1) : 0;
   var elapsed = act.debut ? Math.max(0, Math.min(daysBetween_(act.debut, today) + 1, totalDays || 99999)) : 0;
   var formsKeys = srcs.map(function (x) { return x[0]; });
+  // Total des questionnaires validés par centre et par cible, tous enquêteurs confondus (plusieurs enquêteurs peuvent collecter dans un même centre)
+  var centreTot = {};
+  Object.keys(enq).forEach(function (k) { var cs = enq[k].centres || {}; Object.keys(cs).forEach(function (ck) { var t = centreTot[ck] = centreTot[ck] || {}; Object.keys(cs[ck].valid || {}).forEach(function (fk) { t[fk] = (t[fk] || 0) + cs[ck].valid[fk]; }); }); });
   var list = order.map(function (k) {
     var e = enq[k], total = 0, obj = 0, hasObj = false, f;
     // Objectif = quota d'un centre × nombre de centres réellement enquêtés par cet enquêteur (au moins 1 : le centre en cours)
@@ -1576,9 +1579,11 @@ function suiviCompute_(act) {
     if (qS > 0) {
       e.objByForm = {}; formsKeys.forEach(function (fk) { if (quotas[fk]) e.objByForm[fk] = quotas[fk] * Math.max(1, nc); });
       cKeys.forEach(function (ck) {
-        var ca = e.centresAll[ck], cv = (e.centres[ck] && e.centres[ck].valid) || {}, got = 0, det = {};
-        formsKeys.forEach(function (fk) { var q = quotas[fk] || 0, v = cv[fk] || 0; if (q > 0) { got += Math.min(v, q); det[fk] = { valides: v, total: ca.tot[fk] || 0, quota: q }; } });
-        cd.push({ centre: ca.label, cibles: det, complet: got >= qS, pct: Math.round(got / qS * 1000) / 10, montant: mins.montantCentre > 0 ? Math.round(mins.montantCentre * got / qS) : 0 });
+        var ca = e.centresAll[ck], cv = (e.centres[ck] && e.centres[ck].valid) || {}, all = centreTot[ck] || {}, got = 0, cgot = 0, det = {};
+        // Part de l'enquêteur = son propre travail ; si le total du centre dépasse le quota, chacun est payé au prorata (le surplus n'est jamais payé).
+        formsKeys.forEach(function (fk) { var q = quotas[fk] || 0, v = cv[fk] || 0, t = all[fk] || 0; if (q > 0) { got += t > q ? v * q / t : v; cgot += Math.min(t, q); det[fk] = { valides: v, total: ca.tot[fk] || 0, quota: q, centre: t }; } });
+        var cfull = true; formsKeys.forEach(function (fk) { if ((quotas[fk] || 0) > 0 && (all[fk] || 0) < quotas[fk]) cfull = false; });
+        cd.push({ centre: ca.label, cibles: det, complet: cfull, centrePct: Math.round(cgot / qS * 1000) / 10, pct: Math.round(got / qS * 1000) / 10, parts: got, montant: mins.montantCentre > 0 ? Math.round(mins.montantCentre * got / qS) : 0 });
       });
       cd.sort(function (a, b) { return String(a.centre).localeCompare(String(b.centre), 'fr'); });
     }
@@ -1619,7 +1624,7 @@ function suiviCompute_(act) {
     list.forEach(function (e) {
       var src = enq[e.id ? 'id:' + e.id : 'n:' + (strip_(e.name) || 'non renseigne')]; e.aPayer = 0; var tot = 0;
       (e.centresDetail || []).forEach(function (c) { tot += c.montant; });
-      if (e.inscrit) { e.aPayer = tot; dus2 += tot; } e.retenu = 0; formsKeys.forEach(function (fk) { Object.keys(src.centres || {}).forEach(function (ck) { e.retenu += Math.min(src.centres[ck].valid[fk] || 0, quotas[fk] || 0); }); });
+      if (e.inscrit) { e.aPayer = tot; dus2 += tot; } e.retenu = 0; (e.centresDetail || []).forEach(function (c) { e.retenu += Math.round(c.parts || 0); });
     });
     var touches = {}, complets = {};
     list.forEach(function (e) { (e.centresDetail || []).forEach(function (c) { var k = strip_(c.centre); touches[k] = 1; if (c.complet) complets[k] = 1; }); });
