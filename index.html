@@ -153,11 +153,31 @@
       }
       box.innerHTML = '<h2>📊 Mon tableau de bord</h2>' + (per ? '<p class="hint">' + per + '</p>' : '') + '<table><thead><tr><th>Cible</th><th class="n">Validés</th><th class="n">Rejetés</th>' + (r.modeCentre ? '' : '<th class="n">Objectif</th><th class="n">Reste à atteindre</th>') + '</tr></thead><tbody>' + rows + '</tbody></table>' + (rules ? '<p class="hint">' + rules + '</p>' : '') + rj + ctr;
     }
+
+    function payBox(r){
+      var pb = $('cPay'); if (!pb) { pb = el('div', 'dash'); pb.id = 'cPay'; var d0 = $('cDash'); d0.parentNode.insertBefore(pb, d0); }
+      var h = '';
+      if (r.paiement) h += '<div style="background:#e6f6ee;border-radius:12px;padding:12px 14px;margin-bottom:10px;color:#1a7f4b"><b>✅ Paiement effectué</b><br>' + Number(r.paiement.montant).toLocaleString('fr-FR') + ' FCFA ont été envoyés par MTN MoMo au ' + r.paiement.momo + ' (' + new Date(r.paiement.date).toLocaleDateString('fr-FR') + ').</div>';
+      if (r.momo) h += '<p class="hint">📱 Mon numéro MTN MoMo : <b>' + r.momo + '</b> <a href="#" id="momoEdit">Modifier</a></p>';
+      else h += '<div style="background:#fff4e5;border-radius:12px;padding:12px 14px;margin-bottom:10px;color:#7a4a00"><b>📱 Ajoutez votre numéro MTN MoMo</b> (8 chiffres, sans le 01) pour recevoir votre paiement.</div>';
+      h += '<div id="momoForm" style="' + (r.momo ? 'display:none;' : '') + 'margin-bottom:10px"><input id="momoIn" type="tel" inputmode="numeric" maxlength="12" placeholder="Ex. 97000000" style="padding:10px;border:1px solid #cbd5e1;border-radius:10px;width:180px"> <button id="momoSave" style="padding:10px 14px;border:0;border-radius:10px;background:#0f4c81;color:#fff">Enregistrer</button> <span id="momoMsg" class="hint"></span></div>';
+      pb.innerHTML = h;
+      var ed = $('momoEdit'); if (ed) ed.onclick = function(e){ e.preventDefault(); $('momoForm').style.display = 'block'; };
+      $('momoSave').onclick = function(){
+        var m = $('momoIn').value.replace(/[\s.\-]/g, '');
+        if (!/^\d{8}$/.test(m)) { $('momoMsg').textContent = '8 chiffres exactement, sans le 01.'; return; }
+        $('momoMsg').textContent = 'Enregistrement…';
+        callApi('setMomo', {code: getQr(level), id: en.id, momo: m}).then(function(x){
+          if (x && x.ok) { try { localStorage.setItem('momo_last', m); } catch (e) {} r.momo = x.momo; payBox(r); } else $('momoMsg').textContent = (x && x.error) || 'Échec.';
+        }).catch(function(){ $('momoMsg').textContent = 'Connexion impossible.'; });
+      };
+    }
     var cached = null; try { cached = JSON.parse(localStorage.getItem(ck) || 'null'); } catch (e) {}
     if (cached) draw(cached); else box.innerHTML = '<h2>📊 Mon tableau de bord</h2><p class="hint">Chargement…</p>';
     if (!navigator.onLine) return;
-    callApi('myCounts', {code: getQr(level), id: en.id}).then(function(r){
-      if (r && r.ok && r.cibles) { try { localStorage.setItem(ck, JSON.stringify(r)); } catch (e) {} draw(r); }
+    callApi('myCounts', {code: getQr(level), id: en.id, dev: (typeof getDeviceId === 'function') ? getDeviceId() : ''}).then(function(r){
+      if (r && r.ok && r.cibles) { try { localStorage.setItem(ck, JSON.stringify(r)); } catch (e) {} draw(r); payBox(r);
+        if (r.appareil && r.appareil !== 'OK') box.insertAdjacentHTML('afterbegin', '<p class="hint" style="background:#fff4e5;border-radius:10px;padding:10px 12px;color:#7a4a00"><b>📱 ' + (r.appareil === 'REFUSE' ? 'Téléphone refusé par l\'administrateur.' : 'Téléphone en attente d\'autorisation.') + '</b> ' + (r.appareil === 'REFUSE' ? 'Utilisez l\'un de vos 2 téléphones autorisés.' : 'Ce téléphone n\'est pas encore autorisé : un enquêteur ne peut utiliser que 2 téléphones. La demande a été envoyée à l\'administrateur ; vos réponses restent enregistrées sur ce téléphone et seront envoyées dès qu\'il aura accepté.') + '</p>'); }
     }).catch(function(){});
   }
   function route(){

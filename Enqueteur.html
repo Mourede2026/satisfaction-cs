@@ -25,7 +25,7 @@
   <p>À votre première connexion, indiquez votre <b>nom</b>, votre <b>prénom</b> et votre <b>numéro d'enquêteur</b>. Vous ne le ferez qu'une seule fois pour cette activité : votre prénom et votre numéro seront ensuite associés automatiquement à chacun de vos questionnaires, et à votre facture.</p>
   <label for="nom">Nom</label><input id="nom" type="text" autocomplete="family-name" autocapitalize="characters">
   <label for="prenom">Prénom(s)</label><input id="prenom" type="text" autocomplete="given-name" autocapitalize="words">
-  <label for="numero">Numéro d'enquêteur</label><input id="numero" type="text" autocomplete="off" autocapitalize="characters" placeholder="Ex. 07">
+  <label for="numero">Numéro d'enquêteur</label><input id="numero" type="text" autocomplete="off" autocapitalize="characters" placeholder="Ex. 07"><label for="momo">Numéro MTN MoMo pour recevoir votre paiement (8 chiffres, sans le 01)</label><input id="momo" type="tel" inputmode="numeric" maxlength="12" autocomplete="off" placeholder="Ex. 97000000">
   <button id="go">Valider mon inscription</button>
   <div id="msg"></div>
  </div>
@@ -47,22 +47,25 @@
   if(cur&&!change){location.replace(next);}
   else{
    var src=cur||lastEnqIdent();
-   $('nom').value=src.nom||'';$('prenom').value=src.prenom||'';$('numero').value=src.numero||'';
+   $('nom').value=src.nom||'';$('prenom').value=src.prenom||'';$('numero').value=src.numero||'';try{$('momo').value=localStorage.getItem('momo_last')||'';}catch(e){}
    if(change)say("Vous changez d'enquêteur sur cet appareil : renseignez votre identité.");
   }
  }
  $('go').onclick=function(){
-  var nom=$('nom').value.trim(),prenom=$('prenom').value.trim(),numero=$('numero').value.trim();
+  var nom=$('nom').value.trim(),prenom=$('prenom').value.trim(),numero=$('numero').value.trim(),momo=$('momo').value.replace(/[\s.\-]/g,'');
+   if(!/^\d{8}$/.test(momo)){say('Indiquez votre numéro MTN MoMo : exactement 8 chiffres (sans le 01).','err');return;}
   if(!nom||!prenom||!numero){say('Indiquez votre nom, votre prénom et votre numéro d\'enquêteur.','err');return;}
   if(!navigator.onLine){say("Pas de connexion Internet : l'inscription nécessite une connexion. Réessayez dès qu'elle revient.",'err');return;}
   var b=$('go');b.disabled=true;say('Inscription…');
-  callApi('registerEnqueteur',{code:code,nom:nom,prenom:prenom,numero:numero}).then(function(r){
+  callApi('registerEnqueteur',{code:code,nom:nom,prenom:prenom,numero:numero,momo:momo,dev:(typeof getDeviceId==='function'?getDeviceId():'')}).then(function(r){
    b.disabled=false;
    if(r&&r.error==='ACT_INVALID'){clearQr(level);clearEnq(level);say("Cette activité n'est plus ouverte. Scannez le code de la bonne activité.",'err');setTimeout(toAccess,1500);return;}
    if(!r||!r.ok){say((r&&r.error)||"Échec de l'inscription.",'err');return;}
    setEnq(level,{code:code,id:r.id,nom:r.nom,prenom:r.prenom,numero:r.numero});
-   try{localStorage.setItem('fact_ident',JSON.stringify({nom:r.nom,prenom:r.prenom,numero:r.numero}));}catch(e){}
-   say('✅ Bienvenue '+r.prenom+' (N° '+r.numero+').','ok');
+   try{localStorage.setItem('momo_last',momo);}catch(e){}
+    try{localStorage.setItem('fact_ident',JSON.stringify({nom:r.nom,prenom:r.prenom,numero:r.numero}));}catch(e){}
+   if(r.appareil&&r.appareil!=='OK'){say('✅ Bienvenue '+r.prenom+'. ⚠️ '+(r.appareil==='REFUSE'?'Ce téléphone a été refusé par l\'administrateur : utilisez l\'un de vos 2 téléphones autorisés.':'Ce téléphone est le 3e utilisé avec votre compte : la demande est envoyée à l\'administrateur. Vos réponses resteront sur ce téléphone jusqu\'à son autorisation.'),'err');setTimeout(function(){location.replace(next);},4500);return;}
+    say('✅ Bienvenue '+r.prenom+' (N° '+r.numero+').','ok');
    setTimeout(function(){location.replace(next);},700);
   }).catch(function(e){b.disabled=false;say((e&&e.message)||'Erreur de connexion.','err');});
  };

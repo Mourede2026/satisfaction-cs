@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Comptabilité — paiement des enquêteurs</title>
+<style>
+ :root{--brand:#0f4c81;--ok:#1a7f4b;--warn:#b26a00;--bad:#c0392b}
+ *{box-sizing:border-box}
+ body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f4f6f8;margin:0;color:#1f2937}
+ header{background:var(--brand);color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+ header h1{margin:0;font-size:1.05rem}
+ header nav a,header nav button{color:#cfe3f7;text-decoration:none;font-size:.85rem;margin-left:12px;background:none;border:0;cursor:pointer;font-family:inherit;padding:0}
+ main{max-width:1040px;margin:0 auto;padding:16px}
+ .box{background:#fff;border-radius:14px;padding:18px;margin:0 0 14px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+ #login{max-width:360px;margin:40px auto}
+ h2{font-size:1rem;color:var(--brand);margin:0 0 6px} h3{font-size:.95rem;margin:0 0 6px}
+ .hint{color:#6b7280;font-size:.82rem;margin:0 0 10px}
+ input,button,select{padding:10px 12px;border-radius:10px;font-size:.95rem;font-family:inherit}
+ input,select{width:100%;border:1px solid #dfe4ea;margin-top:4px;background:#fff}
+ label.l{font-size:.78rem;color:#6b7280;display:block;margin-top:10px}
+ button.pri{border:0;background:var(--brand);color:#fff;font-weight:600;cursor:pointer}
+ button.alt{background:#fff;color:var(--brand);border:1px solid var(--brand);cursor:pointer;font-size:.85rem;padding:8px 12px}
+ button.dng{background:#fff;color:var(--bad);border:1px solid var(--bad);cursor:pointer;font-size:.85rem;padding:8px 12px}
+ button:disabled{opacity:.45;cursor:default}
+ .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
+ .row input,.row select{width:auto;margin:0}
+ .grid{display:grid;gap:10px}
+ @media (min-width:700px){.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:1fr 1fr 1fr}}
+ .tabs{display:flex;gap:6px;margin:0 0 12px}
+ .tabs button{flex:1;border:1px solid #dfe4ea;background:#fff;color:#4b5563;cursor:pointer;padding:10px;border-radius:10px;font-weight:600}
+ .tabs button.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+ #err{color:var(--bad);font-size:.9rem;margin:8px 0}
+ /* rapport (exporté en image) */
+ #report{background:#fff;border-radius:14px;padding:20px}
+ #report h1{margin:0;font-size:1.25rem;color:var(--brand)}
+ .sub{color:#6b7280;font-size:.85rem;margin:3px 0 0}
+ .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:16px 0}
+ .kpi{border:1px solid #e5e9ee;border-radius:12px;padding:12px;background:#fafbfc}
+ .kpi b{display:block;font-size:1.5rem;color:var(--brand)} .kpi span{font-size:.78rem;color:#6b7280}
+ .sec{margin:22px 0 0;padding-top:14px;border-top:2px solid #eef2f6}
+ .sec h2{font-size:1.05rem}
+ table{width:100%;border-collapse:collapse;font-size:.84rem}
+ th{background:#eef3f8;color:#33475b;text-align:left;padding:8px 6px;font-weight:600;white-space:nowrap}
+ td{padding:8px 6px;border-bottom:1px solid #eef2f6;vertical-align:middle}
+ td.n,th.n{text-align:right;white-space:nowrap}
+ .scroll{overflow-x:auto}
+ .bar{height:10px;background:#e8edf2;border-radius:99px;overflow:hidden;min-width:70px;position:relative}
+ .bar i{display:block;height:100%;border-radius:99px}
+ .pill{display:inline-block;font-size:.72rem;padding:2px 8px;border-radius:99px;white-space:nowrap}
+ .p-ok{background:#e6f6ee;color:var(--ok)}.p-warn{background:#fff4e0;color:var(--warn)}.p-bad{background:#fdecea;color:var(--bad)}.p-na{background:#eef0f3;color:#6b7280}
+ .legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.78rem;margin-top:6px}
+ .legend span{display:inline-flex;align-items:center;gap:5px}.legend i{display:inline-block;width:14px;height:4px;border-radius:2px}
+ .legend i.d{background:repeating-linear-gradient(90deg,#111 0 5px,transparent 5px 8px)!important;height:3px}
+ svg text{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+ .foot{margin-top:16px;font-size:.74rem;color:#9aa3ad}
+ .empty{color:#6b7280;font-size:.9rem;padding:10px 0}
+ /* configuration */
+ .cfgtb td,.cfgtb th{padding:6px 4px}
+ .cfgtb input{margin:0;padding:7px 8px;font-size:.9rem;width:100%;min-width:64px}
+ .sup{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid #eef2f6}
+ .sup .nm{flex:1;min-width:160px}.sup small{color:#6b7280;display:block}
+ .sup input[type=checkbox]{width:20px;height:20px;margin:0}
+ #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1f2937;color:#fff;padding:10px 16px;border-radius:10px;font-size:.88rem;display:none;z-index:50}
+ .live{display:inline-flex;align-items:center;gap:6px;font-size:.8rem;color:#6b7280}.live input{width:auto;margin:0}
+</style><link rel="manifest" href="manifest.json"><meta name="theme-color" content="#0f4c81"><link rel="icon" href="icon-192.png">
+</head><body>
+<header>
+ <h1>💳 Paiement des enquêteurs</h1>
+ <nav><a href="index.html">Accueil</a><button id="logout" style="display:none" onclick="location.reload()">Déconnexion</button></nav>
+</header>
+<main>
+ <div class="box" id="login">
+  <h3>Connexion</h3>
+  <p class="hint">Compte comptable.</p>
+  <input id="u" placeholder="Identifiant" autocomplete="username" autocapitalize="none">
+  <input id="p" type="password" placeholder="Mot de passe" autocomplete="current-password" onkeydown="if(event.key==='Enter')login()">
+  <button class="pri" style="width:100%;margin-top:12px" onclick="login()">Se connecter</button>
+ </div>
+ <div id="err"></div>
+ <div id="panel" style="display:none">
+  <div class="box">
+   <label class="l" for="sel" style="margin-top:0">Activité</label>
+   <select id="sel" onchange="pick(this.value)"></select>
+   <div class="row"><button class="alt" onclick="load()">↻ Actualiser</button><button class="alt" onclick="exportCsv()">⬇️ Télécharger (CSV)</button></div>
+  </div>
+  <div id="report"><div class="empty">Chargement…</div></div>
+ </div>
+</main>
+<div id="toast"></div>
+<script src="config.js"></script>
+<script>
+ var tok='',cur='',data=null,canPay=false;
+ function $(i){return document.getElementById(i);}
+ function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+ function err(t){$('err').textContent=t||'';}
+ function toast(t){var x=$('toast');x.textContent=t;x.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(function(){x.style.display='none';},2400);}
+ function num(n){return n==null?'—':Math.round(n).toLocaleString('fr-FR');}
+ function frDT(iso){var d=new Date(iso);return isNaN(d)?'':d.toLocaleDateString('fr-FR')+' à '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});}
+ function api(action,d){d=d||{};d.token=tok;return callApi(action,d).then(function(r){if(!r||!r.ok)throw new Error(r&&r.error||'Erreur');return r;});}
+ function login(){
+  err('Connexion…');
+  callApi('accountLogin',{username:$('u').value.trim()},$('p').value).then(function(r){
+   if(!r||!r.ok){err(r&&r.error||'Échec de connexion');return;}
+   var lv=r.account.level;
+   if(lv!=='comptable'&&lv!=='admin'){err("Ce compte n'a pas accès à la comptabilité (compte comptable requis).");return;}
+   tok=r.token;err('');$('login').style.display='none';$('panel').style.display='block';$('logout').style.display='inline';load();
+  }).catch(function(e){err(e.message||'Erreur de connexion.');});
+ }
+ function load(){
+  api('comptaGet',{actId:cur}).then(function(r){
+   data=r;canPay=r.canPay;
+   if(!$('sel').options.length||!cur){
+    $('sel').innerHTML=r.activities.map(function(a){return '<option value="'+esc(a.id)+'">'+esc(a.name)+(a.cible?' — '+esc(a.cible):'')+'</option>';}).join('');
+    if(!r.activities.length){$('report').innerHTML='<div class="empty">Aucune activité.</div>';return;}
+    if(!cur){cur=r.activities[0].id;$('sel').value=cur;return load();}
+   }
+   draw();err('');
+  }).catch(function(e){err(e.message);});
+ }
+ function pick(id){cur=id;data=null;$('report').innerHTML='<div class="empty">Chargement…</div>';load();}
+ function status(e){
+  if(e.paye)return ['p-ok','Payé'];
+  if(!e.valide)return ['p-warn','Facture non validée'];
+  if(!/^\d{8}$/.test(e.momo||''))return ['p-warn','N° MoMo manquant'];
+  if(!(e.montant>0))return ['p-warn','Aucun montant'];
+  return ['p-bad','À payer'];
+ }
+ function draw(){
+  var L=data.enqueteurs||[],due=0,paid=0,ready=0;
+  L.forEach(function(e){if(e.paye)paid+=e.paiement.montant;else{due+=e.montant;if(status(e)[1]==='À payer')ready+=e.montant;}});
+  var h='<div class="kpis"><div class="kpi"><b>'+num(ready)+' FCFA</b><span>Prêt à payer (facture validée)</span></div><div class="kpi"><b>'+num(due)+' FCFA</b><span>Reste dû au total</span></div><div class="kpi"><b>'+num(paid)+' FCFA</b><span>Déjà payé</span></div></div>';
+  h+='<div class="box"><h2>Enquêteurs ('+L.length+')</h2><p class="hint">'+(canPay?'Le paiement n\'est possible que lorsque l\'administrateur a validé la facture de l\'enquêteur. Faites le transfert MTN MoMo vers le numéro indiqué, puis cliquez sur « Transfert effectué » : l\'enquêteur en est informé sur son téléphone.':'Consultation seulement : le paiement est réservé au comptable.')+'</p><div class="scroll"><table><thead><tr><th>Enquêteur</th><th>N°</th><th>N° MTN MoMo</th><th class="n">Montant (FCFA)</th><th>Statut</th><th></th></tr></thead><tbody>';
+  h+=L.length?L.map(function(e){
+   var st=status(e),ok=st[1]==='À payer';
+   var act=e.paye?(canPay?'<button class="alt" onclick="pay(\''+esc(e.id)+'\',false)">Annuler</button>':''):(ok&&canPay?'<button class="pri" onclick="pay(\''+esc(e.id)+'\',true)">✅ Transfert effectué</button>':'');
+   return '<tr><td><b>'+esc(e.nom)+'</b> '+esc(e.prenom)+'</td><td>'+esc(e.numero)+'</td><td>'+(e.momo?'<b>'+esc(e.momo)+'</b>':'—')+'</td><td class="n">'+num(e.paye?e.paiement.montant:e.montant)+'</td><td><span class="pill '+st[0]+'">'+st[1]+'</span>'+(e.paye?'<br><small style="color:#6b7280">'+frDT(e.paiement.date)+'</small>':'')+'</td><td>'+act+'</td></tr>';
+  }).join(''):'<tr><td colspan="6" class="empty">Aucun enquêteur inscrit pour cette activité.</td></tr>';
+  $('report').innerHTML=h+'</tbody></table></div></div>';
+ }
+ function pay(id,paid){
+  var e=(data.enqueteurs||[]).filter(function(x){return x.id===id;})[0];if(!e)return;
+  var q=paid?'Confirmer : le transfert MTN MoMo de '+num(e.montant)+' FCFA vers le '+e.momo+' ('+e.prenom+' '+e.nom+') a bien été effectué ?':'Annuler le paiement enregistré pour '+e.prenom+' '+e.nom+' ?';
+  if(!confirm(q))return;
+  api('comptaPay',{actId:cur,enqId:id,paid:paid}).then(function(){toast(paid?'Paiement enregistré':'Paiement annulé');load();}).catch(function(e){err(e.message);load();});
+ }
+ function exportCsv(){
+  if(!data)return;var q=function(x){return '"'+String(x==null?'':x).replace(/"/g,'""')+'"';},L=[['Nom','Prénom','Numéro','MoMo','Montant','Facture validée','Statut','Payé le'].map(q).join(';')];
+  (data.enqueteurs||[]).forEach(function(e){L.push([e.nom,e.prenom,e.numero,e.momo,e.paye?e.paiement.montant:e.montant,e.valide?'Oui':'Non',status(e)[1],e.paye?frDT(e.paiement.date):''].map(q).join(';'));});
+  var a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\ufeff'+L.join('\r\n')],{type:'text/csv;charset=utf-8'}));a.download='paiements.csv';document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove();},1500);
+ }
+</script></body></html>

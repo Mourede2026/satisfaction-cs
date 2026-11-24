@@ -297,7 +297,7 @@ function sendOrQueue(payload, done){
     return;
   }
   callApi(SUBMIT_FN, payload)
-    .then(res => { if (res && res.ok){ showToast('✅ Réponse enregistrée avec succès.'); resetForm(); done(); updateQueueBadge(); } else { queueSubmission(payload); showToast('Connexion instable : réponse sauvegardée localement.'); resetForm(); done(); } })
+    .then(res => { if (res && res.ok){ showToast('✅ Réponse enregistrée avec succès.'); resetForm(); done(); updateQueueBadge(); } else if (res && /^APPAREIL_/.test(res.error || '')){ queueSubmission(payload); showToast('📱 Téléphone non autorisé par l\'administrateur : réponse gardée sur ce téléphone.'); resetForm(); done(); } else { queueSubmission(payload); showToast('Connexion instable : réponse sauvegardée localement.'); resetForm(); done(); } })
     .catch(() => { queueSubmission(payload); showToast('Connexion instable : réponse sauvegardée localement.'); resetForm(); done(); });
 }
 

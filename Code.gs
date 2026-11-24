@@ -38,6 +38,7 @@ function doPost(e) {
         d[ACT_COL] = act.name; d[ACT_ID_COL] = act.id;
         // Enquêteur inscrit : identité posée par le serveur (prénom + numéro), jamais par le client
         var en = enqId ? enqById_(act.id, enqId) : null;
+        if (en && d._dev) { var dst = devCheck_(act.id, en.id, d._dev); if (dst !== 'OK') return json_({ ok: false, error: 'APPAREIL_' + dst }); }
         if (en) { d[ENQ_ID_COL] = en.id; d[ENQ_NUM_COL] = en.numero; d["Identification de l'enquêteur"] = en.prenom; d['Enqueteur'] = en.prenom; }
       }
     }
@@ -51,11 +52,17 @@ function doPost(e) {
     else if (action === "checkQr") out = { ok: true, valid: qrTokenValid_(d.token, d.level === 'hopital' ? ['enqueteur_hopital'] : d.level === 'zone' ? ['enqueteur'] : QR_ROLES) };
     else if (action === "registerEnqueteur") out = handleRegisterEnqueteur(d);
     else if (action === "myCounts") out = handleMyCounts(d);
+    else if (action === "setMomo") out = handleSetMomo(d);
+    else if (action === "comptaGet") out = handleComptaGet(d.token, d.actId);
+    else if (action === "comptaPay") out = handleComptaPay(d.token, d.actId, d.enqId, d.paid);
+    else if (action === "createAccountant") out = handleCreateAccountant(d.token, d.username, d.label, body.password);
     else if (action === "submitFacture") out = handleSubmitFacture(d);
     else if (action === "matchFactureCode") out = handleMatchFactureCode(d.text);
     else if (action === "getAttestation") out = handleGetAttestation(d);
     else if (action === "suiviList") out = handleSuiviList(d.token);
     else if (action === "suiviGet") out = handleSuiviGet(d.token, d.actId);
+    else if (action === "suiviDevices") out = handleSuiviDevices(d.token, d.actId);
+    else if (action === "suiviDeviceDecision") out = handleSuiviDeviceDecision(d.token, d.actId, d.enqId, d.dev, d.decision);
     else if (action === "suiviConfig") out = handleSuiviConfig(d.token, d.actId);
     else if (action === "suiviSave") out = handleSuiviSave(d.token, d.actId, d.cfg);
     else if (action === "createSupervisor") out = handleCreateSupervisor(d.token, d.username, d.label, body.password);
@@ -1015,7 +1022,7 @@ function hospitalData_(account, sel, periods) {
 // Les factures PDF sont enregistrées directement dans Google Sheets (feuille « FacturesFichiers », découpées en morceaux : aucune autorisation Google Drive n'est nécessaire). Les données (nom, prénom, validation) sont dans
 // les feuilles Enqueteurs, Factures et AttestParams. Seul le compte « admin » peut les lire, les valider et les modifier.
 var ENQ_SHEET_NAME = 'Enqueteurs', FACT_SHEET_NAME = 'Factures', ATT_SHEET_NAME = 'AttestParams';
-var ENQ_HEADERS = ['ID', 'IdActivité', 'Activité', 'Niveau', 'Cible', 'Début', 'Fin', 'Nom', 'Prénom', 'Clé', 'CrééLe', 'Validée', 'ValidéeLe', 'Numéro'];
+var ENQ_HEADERS = ['ID', 'IdActivité', 'Activité', 'Niveau', 'Cible', 'Début', 'Fin', 'Nom', 'Prénom', 'Clé', 'CrééLe', 'Validée', 'ValidéeLe', 'Numéro', 'MoMo'];
 var ENQ_ID_COL = 'IdEnquêteur', ENQ_NUM_COL = 'N° enquêteur'; // colonnes ajoutées par le serveur aux feuilles de réponses
 var FACT_HEADERS = ['ID', 'IdEnqueteur', 'Fichier', 'FileId', 'Taille', 'AjoutéLe'];
 var ATT_HEADERS = ['IdActivité', 'Libellé', 'Début', 'Fin', 'Année', 'Lieu', 'DateSignature', 'Qualité', 'ModifiéLe'];
@@ -1116,7 +1123,7 @@ function activityForInvoice_(code) {
 }
 function cleanNum_(s) { return String(s || '').replace(/[^A-Za-z0-9\-\/]/g, '').slice(0, 15); }
 function numKey_(s) { var k = String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); return /^\d+$/.test(k) ? k.replace(/^0+(?=\d)/, '') : k; } // « 07 » et « 7 » = même numéro
-function enqView_(r) { var v = r.v; return { id: String(v[0]), actId: String(v[1]), nom: String(v[7]), prenom: String(v[8]), numero: String(v[13] || '') }; }
+function enqView_(r) { var v = r.v; return { id: String(v[0]), actId: String(v[1]), nom: String(v[7]), prenom: String(v[8]), numero: String(v[13] || ''), valide: String(v[11]) === 'OUI', momo: String(v[14] || '') }; }
 /** Enquêteur inscrit d'une activité, par son identifiant. */
 function enqById_(actId, id) {
   var f = null;
@@ -1146,7 +1153,7 @@ function enqUpsert_(a, nom, prenom, numero) {
     return { ok: true, created: false, row: byName.row, id: String(byName.v[0]), nom: String(byName.v[7]), prenom: String(byName.v[8]), numero: numero };
   }
   var id = newId_('E');
-  sh.getRange(sh.getLastRow() + 1, 1, 1, ENQ_HEADERS.length).setNumberFormat('@').setValues([[id, a.id, a.name, a.level, a.cible, a.debut, a.fin, nom, prenom, key, new Date().toISOString(), 'NON', '', numero]]);
+  sh.getRange(sh.getLastRow() + 1, 1, 1, ENQ_HEADERS.length).setNumberFormat('@').setValues([[id, a.id, a.name, a.level, a.cible, a.debut, a.fin, nom, prenom, key, new Date().toISOString(), 'NON', '', numero, '']]);
   return { ok: true, created: true, id: id, nom: nom, prenom: prenom, numero: numero };
 }
 /** Enquêteur déjà inscrit (lecture seule) : numéro + nom + prénom ; pour les anciens enquêteurs sans numéro, nom + prénom. */
@@ -1161,18 +1168,39 @@ function enqFind_(a, nom, prenom, numero) {
 }
 /** Première connexion de l'enquêteur : nom, prénom et numéro d'enquêteur (accès par le code de son activité). */
 /** Tableau de bord de l'enquêteur inscrit : par cible, questionnaires validés, rejetés, objectif et reste à atteindre sur la période. */
+/** Numéro MTN MoMo : exactement 8 chiffres (sans 01 ni indicatif). */
+function cleanMomo_(x) { var t = String(x == null ? '' : x).replace(/[\s.\-]/g, ''); return /^\d{8}$/.test(t) ? t : ''; }
+function enqSetMomo_(actId, enqId, momo) {
+  var sh = enqSheet_(), ok = false;
+  rowsOf_(sh, ENQ_HEADERS.length).forEach(function (r) { if (String(r.v[0]) === String(enqId) && String(r.v[1]) === String(actId)) { sh.getRange(r.row, 15).setNumberFormat('@').setValue(momo); ok = true; } });
+  return ok;
+}
+var PAY_SHEET = 'Paiements', PAY_HEADERS = ['IdActivité', 'IdEnquêteur', 'Montant', 'Statut', 'Date', 'Par', 'NumeroMoMo'];
+/** Paiement enregistré (statut PAYE) d'un enquêteur pour une activité, ou null. */
+function paymentOf_(actId, enqId) {
+  var f = null; suiviRows_(PAY_SHEET, PAY_HEADERS).forEach(function (r) { if (String(r.v[0]) === String(actId) && String(r.v[1]) === String(enqId) && String(r.v[3]) === 'PAYE') f = { montant: Number(r.v[2]) || 0, date: String(r.v[4]), par: String(r.v[5]), momo: String(r.v[6]), row: r.row }; });
+  return f;
+}
+/** L'enquêteur ajoute ou modifie son numéro MTN MoMo (8 chiffres). */
+function handleSetMomo(d) {
+  var a = activityForInvoice_(d.code); if (!a) return { ok: false, error: 'ACT_INVALID' };
+  var en = enqById_(a.id, d.id); if (!en) return { ok: false, error: 'ENQ_INVALID' };
+  var m = cleanMomo_(d.momo); if (!m) return { ok: false, error: 'Le numéro MTN MoMo doit comporter exactement 8 chiffres (sans le 01).' };
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try { enqSetMomo_(a.id, en.id, m); SpreadsheetApp.flush(); return { ok: true, momo: m }; } finally { lock.releaseLock(); }
+}
 function handleMyCounts(d) {
   var a = activityForInvoice_(d.code); if (!a) return { ok: false, error: 'ACT_INVALID' };
   var en = enqById_(a.id, d.id); if (!en) return { ok: false, error: 'ENQ_INVALID' };
   var act = actById_(a.id); if (!act) return { ok: false, error: 'ACT_INVALID' };
-  var c = suiviCompute_(act), me = null;
+  var appareil = devCheck_(a.id, en.id, d.dev), c = suiviCompute_(act), me = null, pay = paymentOf_(a.id, en.id);
   c.enqueteurs.forEach(function (e) { if (String(e.id) === String(en.id)) me = e; });
   var cibles = {};
   c.forms.forEach(function (f) {
     var v = me ? (me.valid[f] || 0) : 0, r = me ? (me.rej[f] || 0) : 0, o = me && me.objByForm[f] !== undefined ? me.objByForm[f] : null;
     cibles[f] = { valides: v, rejetes: r, objectif: o, reste: o === null ? null : Math.max(0, o - v) };
   });
-  return { ok: true, cibles: cibles, mins: c.mins, debut: act.debut || '', fin: act.fin || '', joursRestants: c.totalDays ? Math.max(0, c.totalDays - c.elapsed) : null,
+  return { ok: true, appareil: appareil, momo: en.momo, paiement: pay ? { montant: pay.montant, date: pay.date, momo: pay.momo } : null, cibles: cibles, mins: c.mins, debut: act.debut || '', fin: act.fin || '', joursRestants: c.totalDays ? Math.max(0, c.totalDays - c.elapsed) : null,
     rejDuree: me ? me.rejDuree : 0, rejInterv: me ? me.rejInterv : 0, rejPlafond: me ? me.rejPlafond : 0,
     quotas: c.quotas, montantCentre: c.mins.montantCentre, modeCentre: !!(c.mins.montantCentre > 0 && Object.keys(c.quotas).length), centres: me && me.centresDetail ? me.centresDetail : [], gain: me && me.centresDetail ? me.aPayer : null };
 }
@@ -1184,8 +1212,11 @@ function handleRegisterEnqueteur(d) {
   var lock = LockService.getScriptLock(); lock.waitLock(30000);
   try {
     var u = enqUpsert_(a, nom, prenom, numero); if (!u.ok) return u;
+    var mo = String(d.momo == null ? '' : d.momo).trim();
+    if (mo) { var m8 = cleanMomo_(mo); if (!m8) return { ok: false, error: 'Le numéro MTN MoMo doit comporter exactement 8 chiffres (sans le 01).' }; enqSetMomo_(a.id, u.id, m8); }
     SpreadsheetApp.flush();
-    return { ok: true, id: u.id, nom: u.nom, prenom: u.prenom, numero: u.numero, created: u.created, activite: a.name };
+    var ap = devCheck_(a.id, u.id, d.dev);
+    return { ok: true, id: u.id, nom: u.nom, prenom: u.prenom, numero: u.numero, created: u.created, activite: a.name, appareil: ap, momo: (enqById_(a.id, u.id) || {}).momo || '' };
   } finally { lock.releaseLock(); }
 }
 function handleMatchFactureCode(rawText) {
@@ -1357,6 +1388,8 @@ var OBJ_SHEET = 'Objectifs', OBJ_HEADERS = ['IdActivité', 'Enquêteur', 'Cible'
 var EFF_SHEET = 'Effectifs', EFF_HEADERS = ['IdActivité', 'Structure', 'Effectif'];
 var PAR_SHEET = 'SuiviParams', PAR_HEADERS = ['IdActivité', 'MontantTotal', 'ModifiéLe', 'ModifiéPar', 'DuréeMinMin', 'IntervalleMinMin', 'TailleCentre', 'PlafondPct', 'MontantCentre', 'NbCentres'];
 var QC_SHEET = 'QuotasCentre', QC_HEADERS = ['IdActivité', 'Cible', 'Quota'];
+var AP_SHEET = 'AppareilsEnq', AP_HEADERS = ['IdActivité', 'IdEnquêteur', 'Appareil', 'Statut', 'Demandé le', 'Décidé le', 'Décidé par'], MAX_APPAREILS = 2;
+var PJ_SHEET = 'PlafondsJour', PJ_HEADERS = ['IdActivité', 'Formulaire', 'PlafondParJour'];
 var OBJ_ALL = '*'; // ligne d'objectif commune à tous les enquêteurs inscrits de l'activité
 var SUIVI_FORMS = { usagers: 'Usagers', cogecs: 'COGECS', communaute: 'Communauté' };
 var SUIVI_MAXDAYS = 400;
@@ -1417,11 +1450,29 @@ function objGlobal_(actId) {
 /** Durées minimales (en minutes) fixées par l'administrateur pour valider un questionnaire : durée de saisie et intervalle depuis le précédent. */
 function minsOf_(actId) {
   try { var psh = tsheet_(PAR_SHEET, PAR_HEADERS); if (!String(psh.getRange(1, 10).getValue())) psh.getRange(1, 1, 1, PAR_HEADERS.length).setValues([PAR_HEADERS]); } catch (e) {}
-  var o = { duree: 0, intervalle: 0, centre: 0, pct: 0, plafond: 0, montantCentre: 0, nbCentres: 0 }; suiviRows_(PAR_SHEET, PAR_HEADERS).forEach(function (r) { if (String(r.v[0]) === String(actId)) { o.duree = Math.max(0, Number(r.v[4]) || 0); o.intervalle = Math.max(0, Number(r.v[5]) || 0); o.centre = Math.max(0, Number(r.v[6]) || 0); o.pct = Math.max(0, Number(r.v[7]) || 0); o.montantCentre = Math.max(0, Number(r.v[8]) || 0); o.nbCentres = Math.max(0, Number(r.v[9]) || 0); } });
-  o.plafond = (o.centre > 0 && o.pct > 0) ? Math.max(1, Math.floor(o.centre * o.pct / 100)) : 0;
+  var o = { duree: 0, intervalle: 0, centre: 0, plafondJour: 0, plafond: 0, montantCentre: 0, nbCentres: 0 }; suiviRows_(PAR_SHEET, PAR_HEADERS).forEach(function (r) { if (String(r.v[0]) === String(actId)) { o.duree = Math.max(0, Number(r.v[4]) || 0); o.intervalle = Math.max(0, Number(r.v[5]) || 0); o.centre = Math.max(0, Number(r.v[6]) || 0); o.plafondJour = Math.max(0, Math.round(Number(r.v[7]) || 0)); o.montantCentre = Math.max(0, Number(r.v[8]) || 0); o.nbCentres = Math.max(0, Number(r.v[9]) || 0); } });
+  o.plafond = o.plafondJour; // nombre maximal de questionnaires par téléphone, par centre et par jour (valeur fixée par l'administrateur)
   return o;
 }
 /** Quota attendu par centre et par cible (ex. 60 usagers, 3 COGECS) : fixé par l'administrateur pour chaque activité (zone sanitaire ou hôpital). */
+/** Plafond maximal de questionnaires par jour, fixé par l'administrateur pour chaque type de questionnaire (par téléphone et par centre). */
+function plafondsOf_(actId) {
+  var q = {}; suiviRows_(PJ_SHEET, PJ_HEADERS).forEach(function (r) { if (String(r.v[0]) === String(actId)) { var n = Math.round(Number(r.v[2])); if (n > 0) q[String(r.v[1])] = n; } });
+  return q;
+}
+/** Téléphones d'un enquêteur : 2 maximum sont autorisés automatiquement ; un troisième reste « ATTENTE » jusqu'à la décision de l'administrateur. */
+function devCheck_(actId, enqId, dev) {
+  dev = String(dev || '').trim(); if (!dev || !enqId) return 'OK';
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    var rows = suiviRows_(AP_SHEET, AP_HEADERS), mine = rows.filter(function (r) { return String(r.v[0]) === String(actId) && String(r.v[1]) === String(enqId); }), found = null, nOk = 0;
+    mine.forEach(function (r) { if (String(r.v[2]) === dev) found = r; if (String(r.v[3]) === 'AUTORISE') nOk++; });
+    if (found) { var st = String(found.v[3]); return st === 'AUTORISE' ? 'OK' : st; }
+    var status = nOk < MAX_APPAREILS ? 'AUTORISE' : 'ATTENTE', now = new Date().toISOString(), sh = tsheet_(AP_SHEET, AP_HEADERS);
+    sh.getRange(sh.getLastRow() + 1, 1, 1, AP_HEADERS.length).setNumberFormat('@').setValues([[String(actId), String(enqId), dev, status, now, status === 'AUTORISE' ? now : '', status === 'AUTORISE' ? 'automatique' : '']]);
+    return status === 'AUTORISE' ? 'OK' : 'ATTENTE';
+  } finally { lock.releaseLock(); }
+}
 function quotasOf_(actId) {
   var q = {}; suiviRows_(QC_SHEET, QC_HEADERS).forEach(function (r) { if (String(r.v[0]) === String(actId)) { var n = Number(r.v[2]); if (n > 0) q[String(r.v[1])] = n; } });
   return q;
@@ -1437,7 +1488,7 @@ function suiviCompute_(act) {
   var today = day_(new Date()), ss = SpreadsheetApp.getActiveSpreadsheet();
   var srcs = (act.level === 'hopital' ? [['usagers', SHEET_USAGERS_H], ['communaute', SHEET_COMMUNAUTE_H]] : [['usagers', SHEET_USAGERS], ['cogecs', SHEET_COGECS]])
     .filter(function (x) { return !act.forms.length || act.forms.indexOf(x[0]) > -1; });
-  var enq = {}, order = [], allDays = {}, glob = objGlobal_(act.id), mins = minsOf_(act.id), quotas = quotasOf_(act.id);
+  var enq = {}, order = [], allDays = {}, glob = objGlobal_(act.id), mins = minsOf_(act.id), quotas = quotasOf_(act.id), plafonds = plafondsOf_(act.id);
   // Enquêteurs INSCRITS (nom, prénom, numéro saisis à leur première connexion) : ils forment la liste de suivi, même sans réponse
   enqList_(act.id).forEach(function (x) {
     var k = 'id:' + x.id; enq[k] = { key: k, id: x.id, name: x.prenom, nom: x.nom, numero: x.numero, inscrit: true, byForm: {}, daily: {}, objByForm: {} };
@@ -1483,11 +1534,11 @@ function suiviCompute_(act) {
           if (mins.duree > 0 && (it.e - it.s) / 60000 < mins.duree) { bad = true; e.rejDuree++; rj = { m: 'duree', dur: Math.round((it.e - it.s) / 1000), min: mins.duree }; }
           else if (mins.intervalle > 0 && it.dev && prevEnd[it.dev] !== undefined && (it.s - prevEnd[it.dev]) / 60000 < mins.intervalle) { bad = true; e.rejInterv++; rj = { m: 'intervalle', gap: Math.round((it.s - prevEnd[it.dev]) / 1000), prevEnd: new Date(prevEnd[it.dev]).toISOString(), min: mins.intervalle }; }
           if (it.dev) prevEnd[it.dev] = (prevEnd[it.dev] === undefined) ? it.e : Math.max(prevEnd[it.dev], it.e);
-          // plafond : un même téléphone ne peut pas valider plus de (taille du centre × %) questionnaires par jour, pour un même centre et une même cible
-          var capF = quotas[it.f] ? Math.floor(quotas[it.f] * mins.pct / 100) : mins.plafond;
-          if (!bad && capF > 0 && mins.pct > 0 && it.dev && it.c) {
-            var pk = it.dev + '|' + Utilities.formatDate(new Date(it.s), Session.getScriptTimeZone(), 'yyyy-MM-dd') + '|' + it.c + '|' + it.f;
-            if ((perDay[pk] || 0) >= Math.max(1, capF)) { bad = true; e.rejPlafond++; rj = { m: 'plafond', cap: Math.max(1, capF) }; } else perDay[pk] = (perDay[pk] || 0) + 1;
+          // plafond : un même téléphone ne peut pas valider plus que le maximum par jour fixé par l'administrateur pour ce type de questionnaire, pour toute la journée (tous centres confondus)
+          var capF = plafonds[it.f] || 0;
+          if (!bad && capF > 0 && it.dev) {
+            var pk = it.dev + '|' + Utilities.formatDate(new Date(it.s), Session.getScriptTimeZone(), 'yyyy-MM-dd') + '|' + it.f; // tous centres confondus : un téléphone qui a atteint son maximum du jour ne peut plus compter pour un autre centre
+            if ((perDay[pk] || 0) >= capF) { bad = true; e.rejPlafond++; rj = { m: 'plafond', cap: capF }; } else perDay[pk] = (perDay[pk] || 0) + 1;
           }
         }
       }
@@ -1613,19 +1664,46 @@ function handleSuiviGet(token, actId) {
 }
 /** Configuration d'une activité : enquêteurs inscrits, objectif commun, montant total à payer (administrateur et superviseurs affectés) ;
  *  superviseurs, affectations et effectif du personnel : administrateur seulement. */
+/** Téléphones des enquêteurs d'une activité : demandes en attente et téléphones autorisés (administrateur seulement). */
+function handleSuiviDevices(token, actId) {
+  var c = suiviAccess_(token, actId); if (!c.ok) return c; if (!c.admin) return { ok: false, error: "Réservé à l'administrateur." };
+  var names = {}; enqList_(actId).forEach(function (e) { names[e.id] = e; });
+  var list = suiviRows_(AP_SHEET, AP_HEADERS).filter(function (r) { return String(r.v[0]) === String(actId); }).map(function (r) {
+    var e = names[String(r.v[1])] || {}, dv = String(r.v[2]);
+    return { enqId: String(r.v[1]), nom: e.nom || '', prenom: e.prenom || '', numero: e.numero || '', dev: dv, code: dv.slice(-4), statut: String(r.v[3]), demande: String(r.v[4]), decide: String(r.v[5]), par: String(r.v[6]) };
+  });
+  return { ok: true, max: MAX_APPAREILS, appareils: list };
+}
+/** L'administrateur autorise, refuse ou retire un téléphone d'un enquêteur. */
+function handleSuiviDeviceDecision(token, actId, enqId, dev, decision) {
+  var c = suiviAccess_(token, actId); if (!c.ok) return c; if (!c.admin) return { ok: false, error: "Réservé à l'administrateur." };
+  var st = decision === 'AUTORISE' ? 'AUTORISE' : decision === 'REFUSE' ? 'REFUSE' : ''; if (!st) return { ok: false, error: 'Décision invalide.' };
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    var sh = tsheet_(AP_SHEET, AP_HEADERS), done = false;
+    suiviRows_(AP_SHEET, AP_HEADERS).forEach(function (r) {
+      if (String(r.v[0]) === String(actId) && String(r.v[1]) === String(enqId) && String(r.v[2]) === String(dev)) {
+        sh.getRange(r.row, 4, 1, 4).setNumberFormat('@').setValues([[st, String(r.v[4]), new Date().toISOString(), c.label || c.user]]); done = true;
+      }
+    });
+    if (!done) return { ok: false, error: 'Téléphone introuvable.' };
+    SpreadsheetApp.flush(); return { ok: true };
+  } finally { lock.releaseLock(); }
+}
 function handleSuiviConfig(token, actId) {
   var c = suiviAccess_(token, actId); if (!c.ok) return c;
-  var out = { ok: true, admin: c.admin, activities: [], supervisors: [] };
+  var out = { ok: true, admin: c.admin, activities: [], supervisors: [], accountants: [] };
   if (c.admin) {
     var v = accountsSheet_().getDataRange().getValues();
     for (var i = 1; i < v.length; i++) if (String(v[i][2]) === SUP_LEVEL) out.supervisors.push({ username: String(v[i][0]), label: String(v[i][6] || v[i][0]), active: v[i][8] === undefined || v[i][8] === '' || v[i][8] === 'OUI' });
+    out.accountants = []; for (var k = 1; k < v.length; k++) if (String(v[k][2]) === COMPTA_LEVEL) out.accountants.push({ username: String(v[k][0]), label: String(v[k][6] || v[k][0]) });
     out.activities = activitiesRows_().map(actSummary_);
   }
   if (actId) {
     var act = actById_(actId); if (!act) return { ok: false, error: 'Activité introuvable.' };
     out.forms = actForms_(act);
     out.enqueteurs = enqList_(act.id).map(function (x) { return { id: x.id, nom: x.nom, prenom: x.prenom, numero: x.numero }; });
-    out.objGlobal = objGlobal_(act.id); out.montant = montantOf_(act.id); var mn_ = minsOf_(act.id); out.dureeMin = mn_.duree; out.intervalleMin = mn_.intervalle; out.tailleCentre = mn_.centre; out.plafondPct = mn_.pct; out.montantCentre = mn_.montantCentre; out.nbCentres = mn_.nbCentres; out.quotas = quotasOf_(act.id);
+    out.objGlobal = objGlobal_(act.id); out.montant = montantOf_(act.id); var mn_ = minsOf_(act.id); out.dureeMin = mn_.duree; out.intervalleMin = mn_.intervalle; out.tailleCentre = mn_.centre; out.plafonds = plafondsOf_(act.id); out.montantCentre = mn_.montantCentre; out.nbCentres = mn_.nbCentres; out.quotas = quotasOf_(act.id);
     if (c.admin) {
       out.assigned = suiviRows_(AFF_SHEET, AFF_HEADERS).filter(function (r) { return String(r.v[0]) === act.id; }).map(function (r) { return String(r.v[1]); });
       out.effectifs = suiviRows_(EFF_SHEET, EFF_HEADERS).filter(function (r) { return String(r.v[0]) === act.id; }).map(function (r) { return { structure: String(r.v[1]), effectif: Number(r.v[2]) || 0 }; });
@@ -1648,11 +1726,12 @@ function handleSuiviSave(token, actId, cfg) {
   var mnum = function (x) { var t = String(x === undefined || x === null ? '' : x).trim().replace(',', '.'); if (t === '') return 0; var n = Number(t); return (n >= 0 && n <= 600) ? Math.round(n * 10) / 10 : null; };
   var dMin = mnum(cfg.dureeMin), iMin = mnum(cfg.intervalleMin);
   if (dMin === null || iMin === null) return { ok: false, error: 'Les durées minimales doivent être comprises entre 0 et 600 minutes.' };
-  var tC = Math.round(Number(String(cfg.tailleCentre === undefined || cfg.tailleCentre === null ? '' : cfg.tailleCentre).trim().replace(',', '.')) || 0), pP = Number(String(cfg.plafondPct === undefined || cfg.plafondPct === null ? '' : cfg.plafondPct).trim().replace(',', '.')) || 0;
-  if (!(tC >= 0 && tC <= 100000) || !(pP >= 0 && pP <= 100)) return { ok: false, error: 'Taille du centre (0 à 100000) ou pourcentage (0 à 100) invalide.' };
+  var tC = Math.round(Number(String(cfg.tailleCentre === undefined || cfg.tailleCentre === null ? '' : cfg.tailleCentre).trim().replace(',', '.')) || 0), pP = 0;
+  if (!(tC >= 0 && tC <= 100000) ) return { ok: false, error: 'Taille du centre (0 à 100000) invalide.' };
   var mc = Math.round(Number(String(cfg.montantCentre === undefined || cfg.montantCentre === null ? '' : cfg.montantCentre).trim().replace(/\s/g, '').replace(',', '.')) || 0);
   if (!(mc >= 0 && mc <= 1000000000)) return { ok: false, error: 'Montant par centre invalide.' };
   var qrows = []; forms.forEach(function (f) { var qn = Math.round(Number(String((cfg.quotas || {})[f] === undefined || (cfg.quotas || {})[f] === null ? '' : cfg.quotas[f]).trim().replace(',', '.')) || 0); if (qn > 0 && qn <= 100000) qrows.push([act.id, f, String(qn)]); });
+  var prows = []; forms.forEach(function (f) { if (f !== 'usagers' && f !== 'communaute') return; var pn = Math.round(Number(String((cfg.plafonds || {})[f] === undefined || (cfg.plafonds || {})[f] === null ? '' : cfg.plafonds[f]).trim().replace(',', '.')) || 0); if (pn > 100000) pn = 0; if (pn > 0) prows.push([act.id, f, String(pn)]); });
   var nc = Math.round(Number(String(cfg.nbCentres === undefined || cfg.nbCentres === null ? '' : cfg.nbCentres).trim().replace(',', '.')) || 0);
   if (!(nc >= 0 && nc <= 100000)) return { ok: false, error: 'Nombre de centres invalide.' };
   if (m !== '' || dMin > 0 || iMin > 0 || tC > 0 || mc > 0 || nc > 0) par.push([act.id, m === '' ? '' : String(m), new Date().toISOString(), c.user, String(dMin), String(iMin), String(tC), String(pP), String(mc), String(nc)]);
@@ -1668,11 +1747,11 @@ function handleSuiviSave(token, actId, cfg) {
   var lock = LockService.getScriptLock(); lock.waitLock(30000);
   try {
     if (aff) suiviReplace_(AFF_SHEET, AFF_HEADERS, act.id, aff);
-    suiviReplace_(OBJ_SHEET, OBJ_HEADERS, act.id, obj); suiviReplace_(PAR_SHEET, PAR_HEADERS, act.id, par); suiviReplace_(QC_SHEET, QC_HEADERS, act.id, qrows);
+    suiviReplace_(OBJ_SHEET, OBJ_HEADERS, act.id, obj); suiviReplace_(PAR_SHEET, PAR_HEADERS, act.id, par); suiviReplace_(QC_SHEET, QC_HEADERS, act.id, qrows); suiviReplace_(PJ_SHEET, PJ_HEADERS, act.id, prows);
     if (eff) suiviReplace_(EFF_SHEET, EFF_HEADERS, act.id, eff);
     SpreadsheetApp.flush();
   } finally { lock.releaseLock(); }
-  return { ok: true, superviseurs: aff ? aff.length : null, objectifs: obj.length, effectifs: eff ? eff.length : null, montant: (par.length && par[0][1] !== '') ? Number(par[0][1]) : null, dureeMin: dMin, intervalleMin: iMin, tailleCentre: tC, plafondPct: pP, montantCentre: mc, nbCentres: nc };
+  return { ok: true, superviseurs: aff ? aff.length : null, objectifs: obj.length, effectifs: eff ? eff.length : null, montant: (par.length && par[0][1] !== '') ? Number(par[0][1]) : null, dureeMin: dMin, intervalleMin: iMin, tailleCentre: tC, plafonds: cfg.plafonds || {}, montantCentre: mc, nbCentres: nc };
 }
 function handleCreateSupervisor(token, username, label, password) {
   var c = requireAdminSession_(token); if (!c.ok) return c;
@@ -1688,10 +1767,71 @@ function handleCreateSupervisor(token, username, label, password) {
     return { ok: true, username: username, label: label };
   } finally { lock.releaseLock(); }
 }
+var COMPTA_LEVEL = 'comptable';
+function handleCreateAccountant(token, username, label, password) {
+  var c = requireAdminSession_(token); if (!c.ok) return c;
+  username = String(username || '').trim(); label = cleanName_(label) || username;
+  if (!/^[A-Za-z0-9._-]{3,30}$/.test(username)) return { ok: false, error: "Identifiant : 3 à 30 caractères (lettres, chiffres, point, tiret, souligné), sans espace." };
+  if (String(password || '').length < 8) return { ok: false, error: 'Le mot de passe doit contenir au moins 8 caractères.' };
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    if (findAccountRow_(username)) return { ok: false, error: 'Cet identifiant existe déjà.' };
+    var sh = accountsSheet_(), row = sh.getLastRow() + 1;
+    sh.getRange(row, 1, 1, 9).setNumberFormat('@').setValues([[username, sha256Hex_(username + ':' + password), COMPTA_LEVEL, '', '', '', label, new Date().toISOString(), 'OUI']]);
+    setPlainPwd_(row, password);
+    return { ok: true, username: username, label: label };
+  } finally { lock.releaseLock(); }
+}
+/** Accès comptabilité : le comptable (lecture et paiement) ; l'administrateur peut consulter. */
+function comptaAccess_(token) {
+  var s = token ? findSession_(token) : null; if (!s) return { ok: false, error: 'Session invalide ou expirée, reconnectez-vous.' };
+  var a = findAccountRow_(s.username); if (!a || a.data[8] === 'NON') return { ok: false, error: 'Compte désactivé ou introuvable.' };
+  var lvl = String(a.data[2]);
+  if (lvl === COMPTA_LEVEL) return { ok: true, canPay: true, user: s.username, label: String(a.data[6] || s.username) };
+  if (lvl === 'admin') return { ok: true, canPay: false, user: s.username, label: String(a.data[6] || s.username) };
+  return { ok: false, error: 'Accès réservé au comptable.' };
+}
+/** Liste des activités et, pour l'activité choisie, des enquêteurs avec le montant qui leur revient, l'état de la facture et du paiement. */
+function handleComptaGet(token, actId) {
+  var c = comptaAccess_(token); if (!c.ok) return c;
+  var acts = activitiesRows_().map(function (a) { return { id: a.id, name: a.name, level: a.level, cible: a.cible, debut: a.debut, fin: a.fin }; });
+  acts.sort(function (x, y) { return (x.debut || '') < (y.debut || '') ? 1 : (x.debut || '') > (y.debut || '') ? -1 : 0; });
+  var out = { ok: true, canPay: c.canPay, label: c.label, activities: acts, enqueteurs: [] };
+  if (!actId) return out;
+  var act = actById_(actId); if (!act) return { ok: false, error: 'Activité introuvable.' };
+  var enqById = {}; enqList_(actId).forEach(function (e) { enqById[e.id] = e; });
+  var comp = suiviCompute_(act), pays = {};
+  suiviRows_(PAY_SHEET, PAY_HEADERS).forEach(function (r) { if (String(r.v[0]) === String(actId) && String(r.v[3]) === 'PAYE') pays[String(r.v[1])] = { montant: Number(r.v[2]) || 0, date: String(r.v[4]), par: String(r.v[5]), momo: String(r.v[6]) }; });
+  comp.enqueteurs.forEach(function (e) {
+    if (!e.id || !enqById[e.id]) return;
+    var en = enqById[e.id], p = pays[e.id] || null;
+    out.enqueteurs.push({ id: en.id, nom: en.nom, prenom: en.prenom, numero: en.numero, momo: en.momo, montant: Math.round(Number(e.aPayer) || 0), valide: en.valide, paye: !!p, paiement: p });
+  });
+  out.enqueteurs.sort(function (x, y) { return (x.nom + ' ' + x.prenom).localeCompare(y.nom + ' ' + y.prenom); });
+  return out;
+}
+/** Le comptable coche « paiement effectué » (ou annule) après le transfert MTN MoMo. Le montant est recalculé par le serveur. */
+function handleComptaPay(token, actId, enqId, paid) {
+  var c = comptaAccess_(token); if (!c.ok) return c; if (!c.canPay) return { ok: false, error: 'Seul le comptable peut enregistrer un paiement.' };
+  var en = enqById_(actId, enqId); if (!en) return { ok: false, error: 'Enquêteur introuvable.' };
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    var ex = paymentOf_(actId, enqId), sh = tsheet_(PAY_SHEET, PAY_HEADERS);
+    if (!paid) { if (ex) sh.getRange(ex.row, 4, 1, 3).setNumberFormat('@').setValues([['ANNULE', new Date().toISOString(), c.label]]); SpreadsheetApp.flush(); return { ok: true }; }
+    if (ex) return { ok: true, already: true };
+    if (!en.valide) return { ok: false, error: "La facture de cet enquêteur n'a pas encore été validée par l'administrateur." };
+    if (!cleanMomo_(en.momo)) return { ok: false, error: "Cet enquêteur n'a pas renseigné de numéro MTN MoMo valide (8 chiffres)." };
+    var act = actById_(actId); if (!act) return { ok: false, error: 'Activité introuvable.' };
+    var me = null; suiviCompute_(act).enqueteurs.forEach(function (e) { if (String(e.id) === String(enqId)) me = e; });
+    var montant = Math.round(Number(me && me.aPayer) || 0); if (montant <= 0) return { ok: false, error: 'Aucun montant à payer pour cet enquêteur.' };
+    sh.getRange(sh.getLastRow() + 1, 1, 1, PAY_HEADERS.length).setNumberFormat('@').setValues([[String(actId), String(enqId), String(montant), 'PAYE', new Date().toISOString(), c.label, en.momo]]);
+    SpreadsheetApp.flush(); return { ok: true, montant: montant };
+  } finally { lock.releaseLock(); }
+}
 function handleSetSupervisorPassword(token, username, password) {
   var c = requireAdminSession_(token); if (!c.ok) return c;
   if (String(password || '').length < 8) return { ok: false, error: 'Le mot de passe doit contenir au moins 8 caractères.' };
-  var f = findAccountRow_(username); if (!f || String(f.data[2]) !== SUP_LEVEL) return { ok: false, error: 'Compte superviseur introuvable.' };
+  var f = findAccountRow_(username); if (!f || (String(f.data[2]) !== SUP_LEVEL && String(f.data[2]) !== COMPTA_LEVEL)) return { ok: false, error: 'Compte introuvable.' };
   var sh = accountsSheet_(); sh.getRange(f.row, 2).setValue(sha256Hex_(String(f.data[0]).trim() + ':' + password)); setPlainPwd_(f.row, password); sh.getRange(f.row, 8).setValue(new Date().toISOString());
   invalidateSessionsForUser_(String(f.data[0]).trim());
   return { ok: true };

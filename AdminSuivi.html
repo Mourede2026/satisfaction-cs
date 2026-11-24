@@ -66,7 +66,7 @@
 </head><body>
 <header>
  <h1>📈 Suivi de la collecte</h1>
- <nav><a href="index.html">Accueil</a><span id="adminLinks"><a href="AdminQR.html">⚙️ Administration</a><a href="AdminDashboard.html">📊 Tableau de bord</a><a href="AdminAttestations.html">🎓 Attestations</a></span><button id="logout" style="display:none" onclick="location.reload()">Déconnexion</button></nav>
+ <nav><a href="index.html">Accueil</a><span id="adminLinks"><a href="AdminQR.html">⚙️ Administration</a><a href="AdminDashboard.html">📊 Tableau de bord</a><a href="Compta.html">💳 Comptabilité</a><a href="AdminAttestations.html">🎓 Attestations</a></span><button id="logout" style="display:none" onclick="location.reload()">Déconnexion</button></nav>
 </header>
 <main>
  <div class="box" id="login">
@@ -89,11 +89,13 @@
     <button class="alt" id="shBtn" onclick="exportPng(true)" style="display:none">📤 Partager l'image</button>
    </div>
   </div>
-  <div class="tabs" id="tabs"><button id="t-suivi" class="on" onclick="tab('suivi')">📈 Suivi</button><button id="t-rej" onclick="tab('rej')">🚫 Rejets</button><button id="t-conf" onclick="tab('conf')">⚙️ Configuration</button></div>
+  <div class="tabs" id="tabs"><button id="t-suivi" class="on" onclick="tab('suivi')">📈 Suivi</button><button id="t-rej" onclick="tab('rej')">🚫 Rejets</button><button id="t-tel" style="display:none" onclick="tab('tel')">📱 Téléphones</button><button id="t-conf" onclick="tab('conf')">⚙️ Configuration</button></div>
 
   <div id="v-suivi"><div id="report"><div class="empty">Chargement…</div></div></div>
 
   <div id="v-rej" style="display:none"></div>
+
+  <div id="v-tel" style="display:none"></div>
 
   <div id="v-conf" style="display:none"></div>
  </div>
@@ -125,7 +127,7 @@
    var lv=r.account.level;
    if(lv!=='admin'&&lv!=='superviseur_act'){err("Ce compte n'a pas accès au suivi de la collecte (administrateur ou superviseur d'activité).");return;}
    tok=r.token;me=r.account;err('');$('login').style.display='none';$('panel').style.display='block';$('logout').style.display='inline';
-   var adm=lv==='admin';$('adminLinks').style.display=adm?'inline':'none';
+   var adm=lv==='admin';isAdm=adm;$('t-tel').style.display=adm?'':'none';$('adminLinks').style.display=adm?'inline':'none';
    if(navigator.canShare&&navigator.share)$('shBtn').style.display='';
    loadList();
   }).catch(function(e){err(e.message||'Erreur de connexion.');});
@@ -141,17 +143,34 @@
  }
  function pick(id){cur=id;cfg=null;data=null;if(view==='conf')loadConf();else refresh(true);}
  function tab(v){
-  view=v;$('t-suivi').className=v==='suivi'?'on':'';$('t-rej').className=v==='rej'?'on':'';$('t-conf').className=v==='conf'?'on':'';
-  $('v-suivi').style.display=v==='suivi'?'block':'none';$('v-rej').style.display=v==='rej'?'block':'none';$('v-conf').style.display=v==='conf'?'block':'none';
+  view=v;['suivi','rej','tel','conf'].forEach(function(k){$('t-'+k).className=v===k?'on':'';$('v-'+k).style.display=v===k?'block':'none';});
   $('expBtn').style.display=$('shBtn').style.display=(v==='suivi')?'':'none';if(v==='suivi'&&!(navigator.canShare&&navigator.share))$('shBtn').style.display='none';
-  if(v==='conf'&&!cfg)loadConf();else if(v==='suivi')refresh(true);else if(v==='rej'){if(data)drawRej();else refresh(true);}
+  if(v==='conf'&&!cfg)loadConf();else if(v==='suivi')refresh(true);else if(v==='tel')drawTel();else if(v==='rej'){if(data)drawRej();else refresh(true);}
  }
  function refresh(manual){
   if(!cur)return;
-  api('suiviGet',{actId:cur}).then(function(r){data=r;err('');if(view==='suivi')drawReport();else if(view==='rej')drawRej();}).catch(function(e){err(e.message);});
+  api('suiviGet',{actId:cur}).then(function(r){data=r;err('');if(view==='suivi')drawReport();else if(view==='rej')drawRej();if(isAdm)telBadge();}).catch(function(e){err(e.message);});
  }
  setInterval(function(){if($('auto')&&$('auto').checked&&tok&&view==='suivi'&&!document.hidden)refresh(false);},60000);
 
+
+
+ /* ---------- Téléphones des enquêteurs (autorisation par l'administrateur) ---------- */
+ var isAdm=false,telData=null;
+ function telBadge(){if(!cur)return;api('suiviDevices',{actId:cur}).then(function(r){telData=r;var n=(r.appareils||[]).filter(function(x){return x.statut==='ATTENTE';}).length;$('t-tel').textContent='📱 Téléphones'+(n?' ('+n+')':'');if(view==='tel')drawTelHtml();}).catch(function(){});}
+ function drawTel(){if(!telData){$('v-tel').innerHTML='<div class="empty">Chargement…</div>';}else drawTelHtml();telBadge();}
+ function drawTelHtml(){
+  var L=(telData&&telData.appareils)||[],by={};L.forEach(function(x){(by[x.enqId]=by[x.enqId]||{x:x,l:[]}).l.push(x);});
+  var h='<h1>Téléphones des enquêteurs</h1><p class="sub">Chaque enquêteur peut utiliser <b>2 téléphones</b> au maximum. Au-delà, le téléphone reste en attente et ses réponses restent sur l\'appareil, jusqu\'à votre décision.</p>';
+  var pend=L.filter(function(x){return x.statut==='ATTENTE';});
+  h+='<div class="box"><h2>Demandes en attente ('+pend.length+')</h2>'+(pend.length?'<div class="scroll"><table><thead><tr><th>Enquêteur</th><th>Téléphone</th><th>Demandé le</th><th></th></tr></thead><tbody>'+pend.map(function(x){return '<tr><td><b>'+esc(x.prenom)+'</b> '+esc(x.nom)+' <small style="color:#6b7280">N° '+esc(x.numero)+'</small></td><td>…'+esc(x.code)+'</td><td>'+frHMS(x.demande)+'</td><td style="white-space:nowrap"><button onclick="telDecide(\''+esc(x.enqId)+'\',\''+esc(x.dev)+'\',\'AUTORISE\')">✅ Autoriser</button> <button class="alt" onclick="telDecide(\''+esc(x.enqId)+'\',\''+esc(x.dev)+'\',\'REFUSE\')">⛔ Refuser</button></td></tr>';}).join('')+'</tbody></table></div>':'<div class="empty">Aucune demande en attente.</div>')+'</div>';
+  h+='<div class="box"><h2>Tous les téléphones</h2>'+(L.length?'<div class="scroll"><table><thead><tr><th>Enquêteur</th><th>Téléphone</th><th>Statut</th><th>Demandé le</th><th>Décidé le</th><th></th></tr></thead><tbody>'+L.map(function(x){var ok=x.statut==='AUTORISE',w=x.statut==='ATTENTE';return '<tr><td>'+esc(x.prenom)+' '+esc(x.nom)+' <small style="color:#6b7280">N° '+esc(x.numero)+'</small></td><td>…'+esc(x.code)+'</td><td><span class="pill '+(ok?'p-ok':w?'p-warn':'p-bad')+'">'+(ok?'Autorisé':w?'En attente':'Refusé')+'</span></td><td>'+frHMS(x.demande)+'</td><td>'+(x.decide?frHMS(x.decide)+(x.par?' · '+esc(x.par):''):'—')+'</td><td>'+(ok?'<button class="alt" onclick="telDecide(\''+esc(x.enqId)+'\',\''+esc(x.dev)+'\',\'REFUSE\')">Retirer</button>':(!w?'<button class="alt" onclick="telDecide(\''+esc(x.enqId)+'\',\''+esc(x.dev)+'\',\'AUTORISE\')">Autoriser</button>':''))+'</td></tr>';}).join('')+'</tbody></table></div>':'<div class="empty">Aucun téléphone enregistré pour le moment. Un téléphone est enregistré à la première connexion ou au premier envoi d\'une réponse.</div>')+'</div>';
+  $('v-tel').innerHTML=h;
+ }
+ function telDecide(enqId,dev,decision){
+  if(decision==='REFUSE'&&!confirm('Refuser ou retirer ce téléphone ? Ses réponses ne seront plus acceptées.'))return;
+  api('suiviDeviceDecision',{actId:cur,enqId:enqId,dev:dev,decision:decision}).then(function(){telBadge();}).catch(function(e){err(e.message);});
+ }
 
  /* ---------- Rapport des rejets ---------- */
  var rejFilter='';
@@ -161,13 +180,13 @@
  function motifTxt(r){
   if(r.m==='duree')return {t:'Durée trop courte',d:'Le questionnaire a duré '+fmtDur(r.dur)+' ; minimum exigé : '+num(r.min,1)+' min.'};
   if(r.m==='intervalle')return {t:'Intervalle trop court',d:(r.gap<0?'Commencé '+fmtDur(-r.gap)+' AVANT la fin du précédent (chevauchement)':'Commencé '+fmtDur(r.gap)+' après la fin du précédent')+' sur le même téléphone (précédent terminé le '+frHMS(r.prevEnd)+') ; minimum exigé : '+num(r.min,1)+' min.'};
-  return {t:'Plafond journalier',d:'Ce téléphone avait déjà validé '+r.cap+' questionnaires ce jour-là pour ce centre et cette cible (plafond).'};
+  return {t:'Plafond journalier',d:'Ce téléphone avait déjà atteint son maximum de '+r.cap+' questionnaires pour ce jour (tous centres confondus).'};
  }
  function allRej(){var out=[];((data&&data.enqueteurs)||[]).forEach(function(e){(e.rejets||[]).forEach(function(r){out.push({e:e,r:r});});});out.sort(function(a,b){return a.r.s<b.r.s?-1:1;});return out;}
  function drawRej(){
   var d=data,box=$('v-rej');if(!d){box.innerHTML='<div class="empty">Chargement…</div>';return;}
   var list=d.enqueteurs||[],h='<h1>Questionnaires rejetés</h1><p class="sub">'+esc(d.activity.name)+' · Situation au '+frDT(d.generatedAt)+'</p>';
-  h+='<div class="box"><h2>Comment lire ce rapport</h2><p class="hint">Un questionnaire rejeté est bien enregistré, mais n\'est pas compté pour le gain de l\'enquêteur. Le contrôle se fait <b>téléphone par téléphone</b> : le même compte peut être utilisé sur plusieurs téléphones qui collectent en même temps, sans rejet. Trois motifs existent : <b>durée trop courte</b>, <b>intervalle trop court</b> avec le questionnaire précédent <b>du même téléphone</b>, et <b>plafond journalier</b> d\'un téléphone pour un centre.<br>Un téléphone est reconnu grâce à un identifiant créé automatiquement à sa première utilisation de l\'application et envoyé avec chaque réponse (les 4 derniers caractères sont affichés pour les distinguer). Si l\'enquêteur vide les données du navigateur ou réinstalle l\'application, le téléphone reçoit un nouvel identifiant et apparaît comme un nouveau téléphone. Les anciennes réponses sans identifiant sont indiquées « non identifié » et ne sont pas soumises au contrôle d\'intervalle.</p></div>';
+  h+='<div class="box"><h2>Comment lire ce rapport</h2><p class="hint">Un questionnaire rejeté est bien enregistré, mais n\'est pas compté pour le gain de l\'enquêteur. Le contrôle se fait <b>téléphone par téléphone</b> : le même compte peut être utilisé sur plusieurs téléphones qui collectent en même temps, sans rejet. Trois motifs existent : <b>durée trop courte</b>, <b>intervalle trop court</b> avec le questionnaire précédent <b>du même téléphone</b>, et <b>plafond journalier</b> d\'un téléphone (tous centres confondus).<br>Un téléphone est reconnu grâce à un identifiant créé automatiquement à sa première utilisation de l\'application et envoyé avec chaque réponse (les 4 derniers caractères sont affichés pour les distinguer). Si l\'enquêteur vide les données du navigateur ou réinstalle l\'application, le téléphone reçoit un nouvel identifiant et apparaît comme un nouveau téléphone. Les anciennes réponses sans identifiant sont indiquées « non identifié » et ne sont pas soumises au contrôle d\'intervalle.</p></div>';
   var tot=0,v=0;list.forEach(function(e){tot+=e.nbRej;v+=e.nbValid;});
   h+='<div class="kpis"><div class="kpi"><b>'+num(v)+'</b><span>Questionnaires validés</span></div><div class="kpi"><b>'+num(tot)+'</b><span>Questionnaires rejetés</span></div></div>';
   h+='<div class="box"><h2>Par enquêteur et par téléphone</h2><div class="scroll"><table><thead><tr><th>N°</th><th>Enquêteur</th><th>Téléphone</th><th>Premier début</th><th>Dernière fin</th><th class="n">Reçus</th><th class="n">Validés</th><th class="n">Rejetés</th></tr></thead><tbody>';
@@ -321,14 +340,14 @@
  }
 
  /* ---------- Configuration ---------- */
- var st={assigned:{},enqs:[],objGlobal:{},montant:'',dureeMin:'',intervalleMin:'',tailleCentre:'',plafondPct:'',quotas:{},montantCentre:'',nbCentres:'',effTotal:'',effRows:[],forms:[],sups:[]};
+ var st={assigned:{},enqs:[],objGlobal:{},montant:'',dureeMin:'',intervalleMin:'',tailleCentre:'',plafonds:{},quotas:{},montantCentre:'',nbCentres:'',effTotal:'',effRows:[],forms:[],sups:[],accts:[]};
  function isAdm(){return me&&me.level==='admin';}
  function loadConf(){
   $('v-conf').innerHTML='<div class="box"><div class="empty">Chargement…</div></div>';
   api('suiviConfig',{actId:cur}).then(function(r){
-   cfg=r;st.forms=r.forms||[];st.sups=r.supervisors||[];st.assigned={};(r.assigned||[]).forEach(function(u){st.assigned[u]=1;});
+   cfg=r;st.forms=r.forms||[];st.sups=r.supervisors||[];st.accts=r.accountants||[];st.assigned={};(r.assigned||[]).forEach(function(u){st.assigned[u]=1;});
    st.enqs=r.enqueteurs||[];st.objGlobal={};Object.keys(r.objGlobal||{}).forEach(function(f){st.objGlobal[f]=String(r.objGlobal[f]);});
-   st.montant=r.montant==null?'':String(r.montant);st.dureeMin=r.dureeMin?String(r.dureeMin):'';st.intervalleMin=r.intervalleMin?String(r.intervalleMin):'';st.tailleCentre=r.tailleCentre?String(r.tailleCentre):'';st.montantCentre=r.montantCentre?String(r.montantCentre):'';st.nbCentres=r.nbCentres?String(r.nbCentres):'';st.quotas={};Object.keys(r.quotas||{}).forEach(function(k){st.quotas[k]=String(r.quotas[k]);});st.plafondPct=r.plafondPct?String(r.plafondPct):'';
+   st.montant=r.montant==null?'':String(r.montant);st.dureeMin=r.dureeMin?String(r.dureeMin):'';st.intervalleMin=r.intervalleMin?String(r.intervalleMin):'';st.tailleCentre=r.tailleCentre?String(r.tailleCentre):'';st.montantCentre=r.montantCentre?String(r.montantCentre):'';st.nbCentres=r.nbCentres?String(r.nbCentres):'';st.quotas={};Object.keys(r.quotas||{}).forEach(function(k){st.quotas[k]=String(r.quotas[k]);});st.plafonds={};Object.keys(r.plafonds||{}).forEach(function(k){st.plafonds[k]=String(r.plafonds[k]);});
    var tot='',er=[];(r.effectifs||[]).forEach(function(e){if(!e.structure)tot=String(e.effectif);else er.push({structure:e.structure,effectif:String(e.effectif)});});
    st.effTotal=tot;st.effRows=er;drawConf();
   }).catch(function(e){$('v-conf').innerHTML='';err(e.message);});
@@ -338,7 +357,8 @@
   var a=a_(),h='',adm=isAdm();
   if(adm){
    h+='<div class="box"><h2>👤 Superviseurs de l\'activité « '+esc(a.name||'')+' »</h2><p class="hint">Un superviseur d\'activité ne voit que le suivi des activités qui lui sont affectées. Cochez ceux qui suivent cette activité.</p><div id="supList"></div>'+
-    '<h3 style="margin-top:14px">Créer un compte superviseur</h3><div class="grid g3"><div><label class="l" for="ns-u">Identifiant</label><input id="ns-u" placeholder="ex. sup.djidja" autocapitalize="none"></div><div><label class="l" for="ns-l">Nom affiché</label><input id="ns-l" placeholder="Nom et prénom"></div><div><label class="l" for="ns-p">Mot de passe (8 caractères min.)</label><input id="ns-p" type="text" autocomplete="off"></div></div><div class="row"><button class="pri" onclick="createSup()">➕ Créer le superviseur</button></div></div>';
+    '<h3 style="margin-top:14px">Créer un compte superviseur</h3><div class="grid g3"><div><label class="l" for="ns-u">Identifiant</label><input id="ns-u" placeholder="ex. sup.djidja" autocapitalize="none"></div><div><label class="l" for="ns-l">Nom affiché</label><input id="ns-l" placeholder="Nom et prénom"></div><div><label class="l" for="ns-p">Mot de passe (8 caractères min.)</label><input id="ns-p" type="text" autocomplete="off"></div></div><div class="row"><button class="pri" onclick="createSup()">➕ Créer le superviseur</button></div></div>'+
+   '<div class="box"><h2>💳 Compte comptable</h2><p class="hint">Le comptable se connecte sur la page <b>Compta.html</b> : il voit la liste des enquêteurs, le montant qui leur revient, et enregistre le paiement MTN MoMo une fois la facture validée par vous.</p><div id="acctList"></div><h3 style="margin-top:14px">Créer un compte comptable</h3><div class="grid g3"><div><label class="l" for="na-u">Identifiant</label><input id="na-u" placeholder="ex. comptable" autocapitalize="none"></div><div><label class="l" for="na-l">Nom affiché</label><input id="na-l" placeholder="Nom et prénom"></div><div><label class="l" for="na-p">Mot de passe (8 caractères min.)</label><input id="na-p" type="text" autocomplete="off"></div></div><div class="row"><button class="pri" onclick="createAcct()">➕ Créer le comptable</button></div></div>';
   }
   h+='<div class="box"><h2>👥 Enquêteurs inscrits ('+st.enqs.length+')</h2><p class="hint">Liste issue de l\'inscription : chaque enquêteur renseigne son nom, son prénom et son numéro d\'enquêteur à sa première connexion (après le scan du code QR de l\'activité). Elle se met à jour toute seule ; l\'objectif ci-dessous s\'applique automatiquement à chacun, y compris à ceux qui s\'inscriront plus tard.</p><div id="enqList"></div><div class="row"><button class="alt" onclick="loadConf()">🔄 Actualiser la liste</button></div></div>';
   h+='<div class="box"><h2>🎯 Objectif : nombre de personnes à enquêter par cible</h2><p class="hint">Tous les enquêteurs ont <b>le même objectif</b>. Indiquez, pour chaque cible, le nombre de questionnaires attendu de <b>chaque</b> enquêteur sur toute la période de l\'activité.</p><div id="objTb"></div></div>';
@@ -349,7 +369,8 @@
   h+='<div class="box"><h2>⏱️ Validation des questionnaires</h2><p class="hint">Seuls les questionnaires <b>Usagers</b> (zones sanitaires) et <b>Usagers / Communauté</b> (hôpitaux) peuvent être rejetés. Les autres questionnaires (COGECS…) ne sont <b>jamais rejetés</b>, quels que soient leur durée ou leur horaire. Un questionnaire rejeté est enregistré mais n\'est pas compté pour le gain de l\'enquêteur ; la liste précise (enquêteur, téléphone, début, fin, motif) est dans l\'onglet <b>🚫 Rejets</b>. Laissez vide ou 0 pour ne pas appliquer une règle.</p><div class="hint" style="background:#f3f7fb;border-radius:10px;padding:10px 12px;margin:10px 0"><b>Un compte, plusieurs téléphones.</b> Le contrôle se fait <b>téléphone par téléphone</b> : deux téléphones du même compte peuvent collecter en même temps (chevauchement ou quelques secondes d\'écart) sans rejet ; les règles 2 et 3 ne s\'appliquent qu\'entre deux questionnaires du <b>même</b> téléphone. Le tableau de bord additionne ensuite les résultats de tous les téléphones du compte.</div>'+
    '<label class="l" for="dureeMin" style="margin-top:0">1. Durée minimale d\'un questionnaire (début → fin), en minutes — vérifiée sur chaque questionnaire</label><input id="dureeMin" inputmode="decimal" value="'+esc(st.dureeMin)+'" placeholder="Ex. 5" style="max-width:200px">'+
    '<label class="l" for="intervalleMin">2. Intervalle minimal entre la fin d\'un questionnaire et le début du suivant, en minutes — <u>sur le même téléphone seulement</u></label><input id="intervalleMin" inputmode="decimal" value="'+esc(st.intervalleMin)+'" placeholder="Ex. 2" style="max-width:200px">'+
-   '<label class="l" for="plafondPct">3. Part maximale qu\'un même téléphone peut valider par jour et par centre, en % du quota du centre (ex. 75)</label><input id="plafondPct" inputmode="decimal" value="'+esc(st.plafondPct)+'" placeholder="Ex. 75" style="max-width:200px"><div class="hint" id="plafPrev" style="margin-top:8px"></div></div>';
+   '<div class="l" style="margin-top:14px">3. Nombre maximal de questionnaires par jour — valeur définie par l\'administrateur pour chaque type de questionnaire, pour un même téléphone de l\'enquêteur, tous centres confondus. Quand un téléphone a atteint son maximum du jour, il ne peut plus compter pour aucun centre ; un second téléphone du même compte a son propre maximum. Vide ou 0 = pas de plafond.</div>'+
+   st.forms.filter(function(f){return f==='usagers'||f==='communaute';}).map(function(f){return '<label class="l" style="margin-top:8px">Maximum par jour : '+esc(FORM_LBL[f]||f)+'</label><input data-p="'+f+'" inputmode="numeric" value="'+esc(st.plafonds[f]||'')+'" placeholder="Ex. 40" style="max-width:200px">';}).join('')+'<div class="hint" id="plafPrev" style="margin-top:8px"></div></div>';
   h+='<div class="box"><h2>💰 Montant total à payer</h2><p class="hint">Montant total prévu pour tous les enquêteurs de l\'activité (en FCFA). Il est réparti à parts égales entre les enquêteurs inscrits. Un enquêteur qui n\'atteint pas l\'objectif attendu perçoit son per diem au prorata du nombre de questionnaires réalisés.</p>'+
    '<label class="l" for="montant" style="margin-top:0">Montant total à payer (FCFA)</label><input id="montant" inputmode="numeric" value="'+esc(st.montant)+'" placeholder="Ex. 1500000" style="max-width:340px"><div id="montantPrev" class="hint" style="margin-top:8px"></div></div>';
   if(adm){
@@ -359,10 +380,10 @@
   }
   h+='<div class="row" style="margin-bottom:30px"><button class="pri" id="saveBtn" onclick="saveConf()" style="padding:12px 22px">💾 Enregistrer la configuration</button><span class="hint" id="saveMsg" style="margin:0"></span></div>';
   $('v-conf').innerHTML=h;drawEnqs();drawObj();updatePrev();
-  if(adm){drawSups();drawEff();$('effT').oninput=function(){st.effTotal=this.value;};}
+  if(adm){drawSups();drawAccts();drawEff();$('effT').oninput=function(){st.effTotal=this.value;};}
   $('montant').oninput=function(){st.montant=this.value;updatePrev();};
-  function pp(){var c=Math.round(Number(String(st.quotas.usagers||st.tailleCentre).replace(',','.'))||0),p=Number(String(st.plafondPct).replace(',','.'))||0;$('plafPrev').textContent=(c>0&&p>0)?'Plafond : '+Math.max(1,Math.floor(c*p/100))+' questionnaires validés par téléphone, par jour et par centre (hors COGECS, non concernés). Au-delà, ils sont rejetés ; l\'enquêteur peut ensuite faire d\'autres centres, chacun avec son propre plafond ; un second téléphone peut terminer le centre.':'';}
-  document.querySelectorAll('input[data-q]').forEach(function(i){i.oninput=function(){st.quotas[i.getAttribute('data-q')]=this.value;pp();};});$('montantCentre').oninput=function(){st.montantCentre=this.value;};$('nbCentres').oninput=function(){st.nbCentres=this.value;};$('plafondPct').oninput=function(){st.plafondPct=this.value;pp();};pp();
+  function pp(){var t=[];st.forms.forEach(function(f){var p=Math.round(Number(String(st.plafonds[f]||'').replace(',','.'))||0);if((f==='usagers'||f==='communaute')&&p>0)t.push(p+' '+(FORM_LBL[f]||f));});$('plafPrev').textContent=t.length?'Plafond par jour et par téléphone (tous centres confondus) : '+t.join(' ; ')+'. Au-delà, les questionnaires sont rejetés ; ce téléphone ne peut plus compter pour un autre centre ; un second téléphone du même compte a son propre maximum. Les autres questionnaires (COGECS…) ne sont jamais rejetés.':'Aucun plafond par jour. Les questionnaires COGECS ne sont jamais rejetés.';}
+  document.querySelectorAll('input[data-q]').forEach(function(i){i.oninput=function(){st.quotas[i.getAttribute('data-q')]=this.value;pp();};});$('montantCentre').oninput=function(){st.montantCentre=this.value;};$('nbCentres').oninput=function(){st.nbCentres=this.value;};document.querySelectorAll('input[data-p]').forEach(function(i){i.oninput=function(){st.plafonds[i.getAttribute('data-p')]=this.value;pp();};});pp();
   $('dureeMin').oninput=function(){st.dureeMin=this.value;};$('intervalleMin').oninput=function(){st.intervalleMin=this.value;};
  }
  function drawEnqs(){
@@ -403,6 +424,21 @@
   else if(k==='del'){if(!confirm('Supprimer le compte superviseur « '+u+' » ?'))return;api('deleteAccount',{username:u}).then(function(){st.sups=st.sups.filter(function(x){return x.username!==u;});delete st.assigned[u];drawSups();toast('Compte supprimé');}).catch(function(e){err(e.message);});}
  });
  document.addEventListener('change',function(ev){var c=ev.target;if(c.dataset&&c.dataset.k==='as'){var u=c.closest('.sup').dataset.u;if(c.checked)st.assigned[u]=1;else delete st.assigned[u];}});
+
+ function drawAccts(){
+  var b=$('acctList');if(!b)return;
+  if(!st.accts.length){b.innerHTML='<div class="empty">Aucun compte comptable pour le moment.</div>';return;}
+  b.innerHTML=st.accts.map(function(x){return '<div class="sup" data-u="'+esc(x.username)+'"><div class="nm"><b>'+esc(x.label)+'</b><small>'+esc(x.username)+'</small></div><button class="alt" data-k="pw">🔑 Mot de passe</button><button class="alt" data-k="del">🗑️ Supprimer</button></div>';}).join('');
+  b.querySelectorAll('button').forEach(function(bt){bt.onclick=function(){
+   var u=bt.closest('.sup').dataset.u,k=bt.dataset.k;
+   if(k==='pw'){var pw=prompt('Nouveau mot de passe pour '+u+' (8 caractères minimum) :');if(!pw)return;api('setSupervisorPassword',{username:u},pw).then(function(){toast('Mot de passe modifié');}).catch(function(e){err(e.message);});}
+   else{if(!confirm('Supprimer le compte comptable « '+u+' » ?'))return;api('deleteAccount',{username:u}).then(function(){st.accts=st.accts.filter(function(x){return x.username!==u;});drawAccts();toast('Compte supprimé');}).catch(function(e){err(e.message);});}
+  };});
+ }
+ function createAcct(){
+  var u=$('na-u').value.trim(),l=$('na-l').value.trim(),p=$('na-p').value;
+  api('createAccountant',{username:u,label:l},p).then(function(r){st.accts.push({username:r.username,label:r.label});$('na-u').value=$('na-l').value=$('na-p').value='';drawAccts();toast('Comptable créé');err('');}).catch(function(e){err(e.message);});
+ }
  function createSup(){
   var u=$('ns-u').value.trim(),l=$('ns-l').value.trim(),p=$('ns-p').value;
   api('createSupervisor',{username:u,label:l},p).then(function(r){
@@ -418,7 +454,7 @@
  }
  function addEff(){st.effRows.push({structure:'',effectif:''});drawEff();}
  function saveConf(){
-  var cf={objGlobal:{},montant:String(st.montant).trim(),dureeMin:String(st.dureeMin).trim(),intervalleMin:String(st.intervalleMin).trim(),tailleCentre:String(st.tailleCentre).trim(),quotas:st.quotas,montantCentre:String(st.montantCentre).trim(),nbCentres:String(st.nbCentres).trim(),plafondPct:String(st.plafondPct).trim()};
+  var cf={objGlobal:{},montant:String(st.montant).trim(),dureeMin:String(st.dureeMin).trim(),intervalleMin:String(st.intervalleMin).trim(),tailleCentre:String(st.tailleCentre).trim(),quotas:st.quotas,montantCentre:String(st.montantCentre).trim(),nbCentres:String(st.nbCentres).trim(),plafonds:st.plafonds};
   st.forms.forEach(function(f){var v=String(st.objGlobal[f]==null?'':st.objGlobal[f]).trim();if(v!=='')cf.objGlobal[f]=v;});
   if(isAdm()){
    var eff=[];if(String(st.effTotal).trim()!=='')eff.push({structure:'',effectif:st.effTotal});

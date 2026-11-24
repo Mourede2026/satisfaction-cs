@@ -171,6 +171,7 @@
     callApi(S.fn, data).then(function (res) {
       if (res && res.ok) { toast('✅ Réponse enregistrée avec succès.'); reset(); done(); badge(); }
       else if (res && res.error === 'QR_INVALID') { queue(data); done(); }
+      else if (res && /^APPAREIL_/.test(res.error || '')) { queue(data); toast('📱 Téléphone non autorisé par l\'administrateur : réponse gardée sur ce téléphone.'); reset(); done(); }
       else { queue(data); toast('Connexion instable : réponse sauvegardée localement.'); reset(); done(); }
     }).catch(function () { queue(data); toast('Connexion instable : réponse sauvegardée localement.'); reset(); done(); });
   };
