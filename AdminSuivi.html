@@ -242,6 +242,18 @@
  function barColor(p){return p>=100?'#1a7f4b':p>=60?'#0f4c81':p>=30?'#e69f1b':'#c0392b';}
 
  /* ---------- Rapport ---------- */
+
+ function centresHtml(cs){
+  if(!cs||(!cs.liste.length&&!cs.prevus))return '';
+  var nd=cs.nonDemarres,h='<div class="box"><h2>Centres</h2><div class="kpis"><div class="kpi"><b>'+num(cs.termines)+'</b><span>Terminés (score atteint)</span></div><div class="kpi"><b>'+num(cs.enCours)+'</b><span>En cours</span></div><div class="kpi"><b>'+(nd==null?'—':num(nd))+'</b><span>Non démarrés'+(nd==null?' (nombre de centres prévus non renseigné)':'')+'</span></div>'+(cs.prevus?'<div class="kpi"><b>'+num(cs.prevus)+'</b><span>Centres prévus</span></div>':'')+'</div>';
+  if(!cs.quotaDefini)h+='<p class="hint">Définissez le quota par centre dans la Configuration pour distinguer les centres terminés des centres en cours.</p>';
+  if(cs.liste.length){
+   var fk=Object.keys(cs.quotas||{}).filter(function(k){return cs.quotas[k]>0;});
+   h+='<div class="scroll"><table><thead><tr><th>Centre</th><th>Statut</th>'+fk.map(function(k){return '<th class="n">'+esc(FORM_LBL[k]||k)+'</th>';}).join('')+'<th>Avancement</th><th class="n">Enquêteurs</th></tr></thead><tbody>'+cs.liste.map(function(c){
+    return '<tr><td>'+esc(c.centre)+'</td><td><span class="pill '+(c.statut==='termine'?'p-ok':'p-warn')+'">'+(c.statut==='termine'?'Terminé':'En cours')+'</span></td>'+fk.map(function(k){return '<td class="n">'+num(c.valides[k]||0)+' / '+num(cs.quotas[k])+'</td>';}).join('')+'<td>'+bar(c.pct,barColor(c.pct))+'<small>'+num(c.pct,1)+' %</small></td><td class="n">'+num(c.enqs)+'</td></tr>';}).join('')+'</tbody></table></div>';
+  }
+  return h+'</div>';
+ }
  function drawReport(){
   var d=data,a=d.activity,t=d.totals,h='';
   var per=(a.debut||a.fin)?'Période : '+(a.debut?'du '+frDate(a.debut):'')+(a.fin?' au '+frDate(a.fin):''):'';
@@ -290,6 +302,7 @@
   // paiement
   var pm=d.paiement||{};
   h+='<div class="sec"><h2>💰 Paiement des enquêteurs (per diem)</h2>';
+  h+=centresHtml(d.centresStats);
   if(pm.defini&&pm.mode==='centre'){
    h+='<div class="kpis"><div class="kpi"><b>'+num(pm.montantCentre)+'</b><span>Montant d\'un centre complet (FCFA)</span></div><div class="kpi"><b>'+Object.keys(pm.quotas).map(function(k){return pm.quotas[k]+' '+(FORM_LBL[k]||k);}).join(' + ')+'</b><span>Quota par centre</span></div><div class="kpi"><b>'+num(pm.totalDu)+'</b><span>Total dû selon le réalisé (FCFA)</span></div><div class="kpi"><b>'+num(pm.centresComplets)+' / '+num(pm.centresTouches)+(pm.nbCentresPrevus?' sur '+num(pm.nbCentresPrevus):'')+'</b><span>Centres complets / enquêtés'+(pm.nbCentresPrevus?' / prévus':'')+'</span></div>'+(pm.nbCentresPrevus?'<div class="kpi"><b>'+num(pm.budgetPrevu)+'</b><span>Budget prévu si tous les centres sont faits (FCFA)</span></div>':'')+'</div>';
    h+='<div class="scroll"><table><thead><tr><th>N°</th><th>Enquêteur</th><th class="n">Téléphones</th><th class="n">Centres enquêtés</th><th class="n">Questionnaires retenus</th><th class="n">Montant à payer (FCFA)</th></tr></thead><tbody>';
