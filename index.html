@@ -142,8 +142,8 @@
         if (card) { var sp = card.querySelector('.cnt'); if (!sp) { sp = el('span', 'cnt', ''); card.appendChild(sp); } sp.textContent = '✅ ' + x.valides + ' validé' + (x.valides > 1 ? 's' : '') + (x.rejetes ? ' · ❌ ' + x.rejetes + ' rejeté' + (x.rejetes > 1 ? 's' : '') : ''); }
       });
       if (r.debut || r.fin) per = 'Période de collecte : ' + (r.debut ? 'du ' + r.debut : '') + (r.fin ? ' au ' + r.fin : '') + (r.joursRestants !== null ? ' · ' + r.joursRestants + ' jour(s) restant(s)' : '');
-      var rules = ''; if (r.mins && (r.mins.duree || r.mins.intervalle)) rules = 'Un questionnaire est validé s\'il dure au moins ' + (r.mins.duree || 0) + ' min' + (r.mins.intervalle ? ' et s\'il commence au moins ' + r.mins.intervalle + ' min après la fin du précédent' : '') + '.';
-      var rj = (r.rejDuree || r.rejInterv || r.rejPlafond) ? '<p class="hint">Rejetés : ' + r.rejDuree + ' trop court(s)' + (r.mins && r.mins.intervalle ? ', ' + r.rejInterv + ' trop rapproché(s) du précédent' : '') + (r.mins && r.mins.plafond ? ', ' + r.rejPlafond + ' au-delà du plafond de ' + r.mins.plafond + ' par jour et par téléphone' : '') + '. Ils sont enregistrés mais ne comptent pas pour votre objectif.</p>' : '';
+      var rules = ''; // les critères de validité ne sont jamais affichés aux enquêteurs
+      var rj = (r.rejDuree || r.rejInterv || r.rejPlafond) ? '<p class="hint">Les questionnaires rejetés sont enregistrés mais ne comptent pas pour votre objectif.</p>' : '';
       var ctr = '';
       if (r.centres && r.centres.length) {
         var LB = {usagers: 'Usagers', cogecs: 'COGECS', communaute: 'Communauté'};
