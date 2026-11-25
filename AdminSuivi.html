@@ -3,6 +3,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Suivi de la collecte</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
  :root{--brand:#0f4c81;--ok:#1a7f4b;--warn:#b26a00;--bad:#c0392b}
  *{box-sizing:border-box}
@@ -39,6 +42,10 @@
  .kpi b{display:block;font-size:1.5rem;color:var(--brand)} .kpi span{font-size:.78rem;color:#6b7280}
  .sec{margin:22px 0 0;padding-top:14px;border-top:2px solid #eef2f6}
  .sec h2{font-size:1.05rem}
+ .secHead{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 6px}
+ .secHead h2{margin:0}
+ .secImgBtn{font-size:.76rem;padding:5px 10px;white-space:nowrap}
+ #sec-resume{margin-top:0;padding-top:0;border-top:0}
  table{width:100%;border-collapse:collapse;font-size:.84rem}
  th{background:#eef3f8;color:#33475b;text-align:left;padding:8px 6px;font-weight:600;white-space:nowrap}
  td{padding:8px 6px;border-bottom:1px solid #eef2f6;vertical-align:middle}
@@ -199,17 +206,46 @@
   if(!any)h+='<tr><td colspan="8" class="empty">Aucune réponse pour le moment.</td></tr>';
   h+='</tbody></table></div></div>';
   var rows=allRej();
-  h+='<div class="box"><h2>Détail des questionnaires rejetés ('+rows.length+')</h2><div class="row"><select id="rejSel" onchange="rejFilter=this.value;drawRej()"><option value="">Tous les enquêteurs</option>'+list.filter(function(e){return e.nbRej>0;}).map(function(e){var k=e.key||e.id||e.name;return '<option value="'+esc(k)+'"'+(rejFilter===k?' selected':'')+'>'+esc(e.name+' '+(e.nom||''))+' ('+e.nbRej+')</option>';}).join('')+'</select><button class="alt" onclick="exportRejCsv()">⬇️ Télécharger (CSV)</button></div>';
+  h+='<div class="box"><h2>Détail des questionnaires rejetés ('+rows.length+')</h2><div class="row"><select id="rejSel" onchange="rejFilter=this.value;drawRej()"><option value="">Tous les enquêteurs</option>'+list.filter(function(e){return e.nbRej>0;}).map(function(e){var k=e.key||e.id||e.name;return '<option value="'+esc(k)+'"'+(rejFilter===k?' selected':'')+'>'+esc(e.name+' '+(e.nom||''))+' ('+e.nbRej+')</option>';}).join('')+'</select><button class="alt" id="rejPdfBtn" onclick="exportRejPdf()">⬇️ PDF</button><button class="alt" id="rejXlsxBtn" onclick="exportRejXlsx()">⬇️ Excel</button></div>';
   if(rejFilter)rows=rows.filter(function(x){return (x.e.key||x.e.id||x.e.name)===rejFilter;});
   h+='<div class="scroll" style="margin-top:10px"><table><thead><tr><th>Enquêteur</th><th>Téléphone</th><th>Formulaire</th><th>Centre</th><th>Début</th><th>Fin</th><th>Motif du rejet</th></tr></thead><tbody>'+
    (rows.length?rows.map(function(x){var m=motifTxt(x.r);return '<tr><td><b>'+esc(x.e.name)+'</b> <small style="color:#6b7280">'+esc(x.e.nom||'')+'</small></td><td>'+telLbl(x.r.tel,x.r.code)+'</td><td>'+esc(FORM_LBL[x.r.f]||x.r.f)+'</td><td>'+esc(x.r.c||'—')+'</td><td>'+frHMS(x.r.s)+'</td><td>'+frHMS(x.r.e)+'</td><td><span class="pill p-bad">'+m.t+'</span><br><small>'+esc(m.d)+'</small></td></tr>';}).join(''):'<tr><td colspan="7" class="empty">Aucun questionnaire rejeté.</td></tr>')+'</tbody></table></div>';
   if(list.some(function(e){return (e.rejets||[]).length>=500;}))h+='<p class="hint">La liste est limitée à 500 rejets par enquêteur.</p>';
   box.innerHTML=h+'</div>';
  }
- function exportRejCsv(){
-  var q=function(x){return '"'+String(x==null?'':x).replace(/"/g,'""')+'"';},L=[['Numéro','Prénom','Nom','Téléphone','Code téléphone','Formulaire','Centre','Début','Fin','Motif','Détail'].map(q).join(';')];
-  allRej().forEach(function(x){var m=motifTxt(x.r);L.push([x.e.numero,x.e.name,x.e.nom,x.r.tel?('Téléphone '+x.r.tel):'Non identifié',x.r.code,FORM_LBL[x.r.f]||x.r.f,x.r.c,frHMS(x.r.s),frHMS(x.r.e),m.t,m.d].map(q).join(';'));});
-  saveBlob(new Blob(['\ufeff'+L.join('\r\n')],{type:'text/csv;charset=utf-8'}),'rejets_'+slug((data&&data.activity&&data.activity.name)||'activite')+'.csv');
+ /* Lignes du rapport des rejets, communes aux exports PDF et Excel (respecte le filtre enquêteur en cours) */
+ function rejExportRows(){
+  var rows=allRej();
+  if(rejFilter)rows=rows.filter(function(x){return (x.e.key||x.e.id||x.e.name)===rejFilter;});
+  var head=['Numéro','Enquêteur','Téléphone','Formulaire','Centre','Début','Fin','Motif','Détail'];
+  var body=rows.map(function(x){var m=motifTxt(x.r);return [x.e.numero||'',x.e.name+(x.e.nom?' '+x.e.nom:''),x.r.tel?('Téléphone '+x.r.tel):'Non identifié',FORM_LBL[x.r.f]||x.r.f,x.r.c||'—',frHMS(x.r.s),frHMS(x.r.e),m.t,m.d];});
+  return {head:head,body:body};
+ }
+ function exportRejPdf(){
+  if(!data){toast('Rien à exporter');return;}
+  var J=window.jspdf&&window.jspdf.jsPDF;
+  if(!J||!J.API||!J.API.autoTable){err("Bibliothèque PDF non chargée (connexion Internet requise).");return;}
+  var btn=$('rejPdfBtn'),old=btn.textContent;btn.disabled=true;btn.textContent='…';
+  try{
+   var r=rejExportRows(),doc=new J({orientation:'l',unit:'pt',format:'a4'});
+   doc.setFontSize(13);doc.text('Questionnaires rejetés — '+(data.activity&&data.activity.name||''),40,34);
+   doc.setFontSize(9);doc.text('Situation au '+frDT(data.generatedAt),40,50);
+   doc.autoTable({head:[r.head],body:r.body,startY:62,styles:{fontSize:8,cellPadding:4},headStyles:{fillColor:[15,76,129]},margin:{left:40,right:40}});
+   doc.save('rejets_'+slug((data&&data.activity&&data.activity.name)||'activite')+'.pdf');
+  }catch(e){err('Export impossible : '+(e&&e.message||e));}
+  btn.disabled=false;btn.textContent=old;
+ }
+ function exportRejXlsx(){
+  if(!data){toast('Rien à exporter');return;}
+  if(typeof XLSX==='undefined'){err("Bibliothèque Excel non chargée (connexion Internet requise).");return;}
+  var btn=$('rejXlsxBtn'),old=btn.textContent;btn.disabled=true;btn.textContent='…';
+  try{
+   var r=rejExportRows(),ws=XLSX.utils.aoa_to_sheet([r.head].concat(r.body)),wb=XLSX.utils.book_new();
+   ws['!cols']=r.head.map(function(){return {wch:18};});
+   XLSX.utils.book_append_sheet(wb,ws,'Rejets');
+   XLSX.writeFile(wb,'rejets_'+slug((data&&data.activity&&data.activity.name)||'activite')+'.xlsx');
+  }catch(e){err('Export impossible : '+(e&&e.message||e));}
+  btn.disabled=false;btn.textContent=old;
  }
 
  /* ---------- Graphique SVG ---------- */
@@ -257,9 +293,8 @@
  function drawReport(){
   var d=data,a=d.activity,t=d.totals,h='';
   var per=(a.debut||a.fin)?'Période : '+(a.debut?'du '+frDate(a.debut):'')+(a.fin?' au '+frDate(a.fin):''):'';
-  h+='<h1>'+esc(a.name)+'</h1><p class="sub">'+(a.level==='hopital'?'🏥 Hôpital':'🏘️ Zone sanitaire')+(a.cible?' — '+esc(a.cible):'')+(per?' · '+per:'')+'</p>';
-  h+='<p class="sub">Situation au '+frDT(d.generatedAt)+(d.supervisors&&d.supervisors.length?' · Superviseur(s) : '+esc(d.supervisors.join(', ')):'')+'</p>';
   var av=t.objectif>0?Math.round(t.realise/t.objectif*1000)/10:null;
+  h+='<div class="sec" id="sec-resume"><div class="secHead"><div><h1 style="margin:0">'+esc(a.name)+'</h1><p class="sub">'+(a.level==='hopital'?'🏥 Hôpital':'🏘️ Zone sanitaire')+(a.cible?' — '+esc(a.cible):'')+(per?' · '+per:'')+'</p><p class="sub">Situation au '+frDT(d.generatedAt)+(d.supervisors&&d.supervisors.length?' · Superviseur(s) : '+esc(d.supervisors.join(', ')):'')+'</p></div><button class="alt no-export secImgBtn" onclick="exportSectionImg(\'sec-resume\',\'resume\',this)">📷 Image</button></div>';
   h+='<div class="kpis">'+
    '<div class="kpi"><b>'+num(t.realise)+'</b><span>Questionnaires collectés</span></div>'+
    '<div class="kpi"><b>'+num(t.valides)+'</b><span>Validés</span></div><div class="kpi"><b>'+num(t.rejetes)+'</b><span>Rejetés (durée ou intervalle)</span></div>'+
@@ -268,8 +303,8 @@
    '<div class="kpi"><b>'+(av!=null?num(av,1)+' %':'—')+'</b><span>Avancement</span></div>'+
    '<div class="kpi"><b>'+(d.totalDays?d.elapsed+' / '+d.totalDays:d.elapsed||'—')+'</b><span>Jours écoulés</span></div>'+
    '<div class="kpi"><b>'+t.nbInscrits+'</b><span>Enquêteur(s) inscrit(s)'+(t.nbInscrits?' · '+t.nbActifs+' actif(s)':'')+'</span></div>'+
-   (d.paiement&&d.paiement.montant!=null?'<div class="kpi"><b>'+num(d.paiement.montant)+'</b><span>Montant total à payer (FCFA)</span></div>':'')+'</div>';
-  h+='<div class="sec"><h2>Évolution de la collecte par enquêteur</h2>';
+   (d.paiement&&d.paiement.montant!=null?'<div class="kpi"><b>'+num(d.paiement.montant)+'</b><span>Montant total à payer (FCFA)</span></div>':'')+'</div></div>';
+  h+='<div class="sec" id="sec-evolution"><div class="secHead"><h2>Évolution de la collecte par enquêteur</h2><button class="alt no-export secImgBtn" onclick="exportSectionImg(\'sec-evolution\',\'evolution\',this)">📷 Image</button></div>';
   if(!d.enqueteurs.length){h+='<div class="empty">Aucun enquêteur inscrit et aucune réponse reçue pour cette activité. Les enquêteurs s\'inscrivent (nom, prénom, numéro) à leur première connexion.</div>';}
   else{
    var ser=d.enqueteurs.slice(0,12).map(function(e,i){return {name:e.name,color:COLORS[i%COLORS.length],values:e.cumul};});
@@ -279,7 +314,7 @@
   }
   h+='</div>';
   // tableau enquêteurs
-  h+='<div class="sec"><h2>Point par enquêteur</h2>';
+  h+='<div class="sec" id="sec-enqueteurs"><div class="secHead"><h2>Point par enquêteur</h2><button class="alt no-export secImgBtn" onclick="exportSectionImg(\'sec-enqueteurs\',\'enqueteurs\',this)">📷 Image</button></div>';
   if(d.enqueteurs.length){
    h+='<div class="scroll"><table><thead><tr><th>Enquêteur</th>'+d.forms.map(function(f){return '<th class="n">'+FORM_LBL[f]+'</th>';}).join('')+'<th class="n">Total</th><th class="n">Objectif</th><th class="n">Attendu</th><th class="n">Écart</th><th style="min-width:110px">Avancement</th><th>Statut</th><th>Rythme / jour</th><th>Dernière saisie</th></tr></thead><tbody>';
    d.enqueteurs.forEach(function(e){
@@ -301,7 +336,7 @@
   h+='</div>';
   // paiement
   var pm=d.paiement||{};
-  h+='<div class="sec"><h2>💰 Paiement des enquêteurs (per diem)</h2>';
+  h+='<div class="sec" id="sec-paiement"><div class="secHead"><h2>💰 Paiement des enquêteurs (per diem)</h2><button class="alt no-export secImgBtn" onclick="exportSectionImg(\'sec-paiement\',\'paiement\',this)">📷 Image</button></div>';
   h+=centresHtml(d.centresStats);
   if(pm.defini&&pm.mode==='centre'){
    h+='<div class="kpis"><div class="kpi"><b>'+num(pm.montantCentre)+'</b><span>Montant d\'un centre complet (FCFA)</span></div><div class="kpi"><b>'+Object.keys(pm.quotas).map(function(k){return pm.quotas[k]+' '+(FORM_LBL[k]||k);}).join(' + ')+'</b><span>Quota par centre</span></div><div class="kpi"><b>'+num(pm.totalDu)+'</b><span>Total dû selon le réalisé (FCFA)</span></div><div class="kpi"><b>'+num(pm.centresComplets)+' / '+num(pm.centresTouches)+(pm.nbCentresPrevus?' sur '+num(pm.nbCentresPrevus):'')+'</b><span>Centres complets / enquêtés'+(pm.nbCentresPrevus?' / prévus':'')+'</span></div>'+(pm.nbCentresPrevus?'<div class="kpi"><b>'+num(pm.budgetPrevu)+'</b><span>Budget prévu si tous les centres sont faits (FCFA)</span></div>':'')+'</div>';
@@ -322,7 +357,7 @@
   h+='</div>';
   // personnel
   var p=d.personnel;
-  h+='<div class="sec"><h2>Point du personnel</h2>';
+  h+='<div class="sec" id="sec-personnel"><div class="secHead"><h2>Point du personnel</h2><button class="alt no-export secImgBtn" onclick="exportSectionImg(\'sec-personnel\',\'personnel\',this)">📷 Image</button></div>';
   if(!p.defini&&!p.repondu){h+='<div class="empty">Effectif du personnel non renseigné et aucune réponse du personnel sur la période.'+(me.level==='admin'?' Renseignez-le dans l\'onglet Configuration.':'')+'</div>';}
   else{
    h+='<div class="kpis"><div class="kpi"><b>'+(p.defini?num(p.effectif):'—')+'</b><span>Effectif du personnel</span></div><div class="kpi"><b>'+num(p.repondu)+'</b><span>Ont répondu</span></div><div class="kpi"><b>'+(p.defini?num(Math.max(0,p.effectif-p.repondu)):'—')+'</b><span>Restent à enquêter</span></div><div class="kpi"><b>'+(p.taux!=null?num(p.taux,1)+' %':'—')+'</b><span>Taux de participation</span></div></div>';
@@ -338,11 +373,12 @@
  }
 
  /* ---------- Export en image ---------- */
+ function ignoreForCapture(el){return el&&el.classList&&el.classList.contains('no-export');}
  function exportPng(share){
   if(!data){toast('Rien à exporter');return;}
   if(typeof html2canvas==='undefined'){err("Bibliothèque d'export non chargée (connexion Internet requise).");return;}
   var btn=share?$('shBtn'):$('expBtn'),old=btn.textContent;btn.disabled=true;btn.textContent='Création de l\'image…';
-  html2canvas($('report'),{scale:2,backgroundColor:'#ffffff',useCORS:true,windowWidth:1100}).then(function(c){
+  html2canvas($('report'),{scale:2,backgroundColor:'#ffffff',useCORS:true,windowWidth:1100,ignoreElements:ignoreForCapture}).then(function(c){
    c.toBlob(function(b){
     btn.disabled=false;btn.textContent=old;
     var name='Suivi_'+slug(data.activity.name)+'_'+data.generatedAt.slice(0,10)+'.png';
@@ -350,6 +386,21 @@
     saveBlob(b,name);toast('Image enregistrée');
    },'image/png');
   }).catch(function(e){btn.disabled=false;btn.textContent=old;err('Export impossible : '+(e&&e.message||e));});
+ }
+ /* Export d'une seule section du suivi (image indépendante, prête à partager) */
+ function exportSectionImg(id,label,btn){
+  if(!data){toast('Rien à exporter');return;}
+  var el=$(id);
+  if(!el){toast('Section introuvable');return;}
+  if(typeof html2canvas==='undefined'){err("Bibliothèque d'export non chargée (connexion Internet requise).");return;}
+  var old=btn?btn.textContent:'';if(btn){btn.disabled=true;btn.textContent='…';}
+  html2canvas(el,{scale:2,backgroundColor:'#ffffff',useCORS:true,windowWidth:1100,ignoreElements:ignoreForCapture}).then(function(c){
+   c.toBlob(function(b){
+    if(btn){btn.disabled=false;btn.textContent=old;}
+    var name='Suivi_'+slug(data.activity.name)+'_'+label+'_'+data.generatedAt.slice(0,10)+'.png';
+    saveBlob(b,name);toast('Image enregistrée');
+   },'image/png');
+  }).catch(function(e){if(btn){btn.disabled=false;btn.textContent=old;}err('Export impossible : '+(e&&e.message||e));});
  }
 
  /* ---------- Configuration ---------- */
