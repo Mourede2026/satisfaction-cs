@@ -157,6 +157,7 @@
     btn.onclick = function () { startAudioRecording(); };
     b.appendChild(p); b.appendChild(hint); b.appendChild(btn);
     var main = document.querySelector('main'); if (main) main.style.display = 'none';
+    arecWatchPermission();
   }
   function arecUnblock() {
     AREC.blocked = false;
@@ -188,11 +189,35 @@
       arecBlock("L'accès au micro a été refusé ou est bloqué. Autorisez le micro pour ce site dans les paramètres du navigateur, puis appuyez sur Réessayer (ou rechargez la page si rien ne change).");
     });
   }
+  var arecWatching = false;
+  /* Reprise automatique : dès que le micro est autorisé (réglages du navigateur), le formulaire bloqué se débloque seul. */
+  function arecCheckAndResume() {
+    if (!AREC.blocked) return;
+    try {
+      navigator.permissions.query({ name: 'microphone' }).then(function (st) { if (st.state === 'granted') startAudioRecording(); }).catch(function () {});
+    } catch (e) {}
+  }
+  function arecWatchPermission() {
+    if (arecWatching) return; arecWatching = true;
+    try {
+      navigator.permissions.query({ name: 'microphone' }).then(function (st) {
+        st.onchange = function () { if (st.state === 'granted' && AREC.blocked) startAudioRecording(); };
+      }).catch(function () {});
+    } catch (e) {}
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) arecCheckAndResume(); });
+    window.addEventListener('focus', arecCheckAndResume);
+  }
+  function arecRelease() {
+    if (arecTickTimer) { clearInterval(arecTickTimer); arecTickTimer = null; }
+    if (AREC.stream) { try { AREC.stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {} }
+    AREC.stream = null; AREC.rec = null; AREC.chunks = []; AREC.startedAt = null;
+  }
   function arecStopAndGet() {
     return new Promise(function (resolve) {
-      if (!AREC.rec || AREC.rec.state === 'inactive') { resolve(null); return; }
+      if (!AREC.rec || AREC.rec.state === 'inactive') { arecRelease(); resolve(null); return; }
       AREC.rec.onstop = function () {
         var blob = new Blob(AREC.chunks, { type: AREC.mime }), durSec = AREC.startedAt ? Math.round((Date.now() - AREC.startedAt) / 1000) : 0;
+        arecRelease(); // coupe le micro : un nouvel enregistrement démarrera avec le prochain formulaire
         var reader = new FileReader();
         reader.onloadend = function () { resolve({ b64: (String(reader.result).split(',')[1] || ''), mime: AREC.mime, dur: durSec }); };
         reader.onerror = function () { resolve(null); };
@@ -200,10 +225,6 @@
       };
       try { AREC.rec.stop(); } catch (e) { resolve(null); }
     });
-  }
-  function arecRestart() {
-    AREC.chunks = []; AREC.startedAt = Date.now();
-    if (AREC.rec && AREC.rec.state === 'inactive') { try { AREC.rec.start(1000); } catch (e) {} }
   }
 
   /* ---------- validation et envoi ---------- */
@@ -248,11 +269,10 @@
     function done() { btn.disabled = false; btn.textContent = '✅ Enregistrer la réponse'; }
     arecStopAndGet().then(function (audio) {
       if (audio) { data._audio_b64 = audio.b64; data._audio_mime = audio.mime; data._audio_dur = audio.dur; }
-      arecRestart();
       if (!navigator.onLine) { queue(data); toast('Hors connexion : réponse sauvegardée localement.'); reset(); done(); return; }
       callApi(S.fn, data).then(function (res) {
         if (res && res.ok) { toast('✅ Réponse enregistrée avec succès.'); reset(); done(); badge(); }
-        else if (res && res.error === 'QR_INVALID') { queue(data); done(); }
+        else if (res && res.error === 'QR_INVALID') { queue(data); done(); startAudioRecording(); }
         else if (res && /^APPAREIL_/.test(res.error || '')) { queue(data); toast('📱 Téléphone non autorisé par l\'administrateur : réponse gardée sur ce téléphone.'); reset(); done(); }
         else { queue(data); toast('Connexion instable : réponse sauvegardée localement.'); reset(); done(); }
       }).catch(function () { queue(data); toast('Connexion instable : réponse sauvegardée localement.'); reset(); done(); });
@@ -297,7 +317,7 @@
     })();
   };
   setInterval(function () { if (navigator.onLine && getQ().length) window.syncQueue(false); }, 30000);
-  function reset() { ans = {}; t0 = new Date(); render(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  function reset() { ans = {}; t0 = new Date(); render(); window.scrollTo({ top: 0, behavior: 'smooth' }); startAudioRecording(); /* nouveau formulaire = nouvel enregistrement */ }
   function toast(m) { var t = $('toast'); t.textContent = m; t.style.display = 'block'; setTimeout(function () { t.style.display = 'none'; }, 3000); }
   window.addEventListener('online', function () { badge(); window.syncQueue(false); });
   window.addEventListener('offline', badge);

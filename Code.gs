@@ -43,11 +43,15 @@ function doPost(e) {
       }
     }
     if (isSubmit && dejaRecu_(cid)) return json_({ ok: true, duplicate: true });
-    // Enregistrement audio obligatoire (Usagers, Usagers Hôpital, COGECS, Communauté) : stocké à part dans Google Sheets, par morceaux.
-    var audioB64 = d._audio_b64, audioMime = d._audio_mime; delete d._audio_b64; delete d._audio_mime; delete d._audio_dur;
+    // Enregistrement audio obligatoire (Usagers, Usagers Hôpital, COGECS, Communauté) : un fichier par enquête sur Google Drive,
+    // le lien (URL) est écrit dans la colonne « Audio ». Si Drive échoue, repli : stockage par morceaux dans Google Sheets.
+    var audioB64 = d._audio_b64, audioMime = d._audio_mime, audioDur = d._audio_dur; delete d._audio_b64; delete d._audio_mime; delete d._audio_dur;
     if (isSubmit && audioB64 && FORM_KEY_[action]) {
-      try { saveAudioChunks_(cid, FORM_KEY_[action], audioMime, audioB64); d[AUDIO_COL] = cid || 'Oui'; }
-      catch (audioErr) { d[AUDIO_COL] = 'Erreur enregistrement audio : ' + audioErr.message; }
+      try { d[AUDIO_COL] = saveAudioToDrive_(cid, FORM_KEY_[action], audioMime, audioB64, audioDur); }
+      catch (driveErr) {
+        try { saveAudioChunks_(cid, FORM_KEY_[action], audioMime, audioB64); d[AUDIO_COL] = cid || 'Oui'; }
+        catch (audioErr) { d[AUDIO_COL] = 'Erreur enregistrement audio : ' + audioErr.message; }
+      }
     }
     if (action === "submitUsagers") out = appendRecord_(SHEET_USAGERS, d);
     else if (action === "submitPersonnels") out = appendRecord_(SHEET_PERSONNELS, d);
@@ -160,6 +164,38 @@ function dejaRecu_(cid) {
   return !!sh.getRange(2, 1, sh.getLastRow() - 1, 1).createTextFinder(String(cid)).matchEntireCell(true).findNext();
 }
 function noterRecu_(cid) { if (cid) getOrCreateSheet_(ENVOIS_SHEET_NAME, ['cid', 'date']).appendRow([String(cid), new Date().toISOString()]); }
+
+/* ---------- Audio d'entretien sur Google Drive (lien dans la colonne « Audio ») ----------
+   Dossier « Audios enquêtes satisfaction » > sous-dossier par formulaire. Les fichiers restent PRIVÉS
+   (visibles seulement par le compte propriétaire du script / l'administrateur). */
+var AUDIO_DRIVE_ROOT = 'Audios enquêtes satisfaction';
+function audioFolder_(formKey) {
+  var props = PropertiesService.getScriptProperties(), pk = 'AUDIO_FOLDER_' + (formKey || 'autre');
+  var id = props.getProperty(pk);
+  if (id) { try { return DriveApp.getFolderById(id); } catch (e) {} }
+  var rootId = props.getProperty('AUDIO_FOLDER_ROOT'), root = null;
+  if (rootId) { try { root = DriveApp.getFolderById(rootId); } catch (e) {} }
+  if (!root) {
+    var it = DriveApp.getFoldersByName(AUDIO_DRIVE_ROOT);
+    root = it.hasNext() ? it.next() : DriveApp.createFolder(AUDIO_DRIVE_ROOT);
+    props.setProperty('AUDIO_FOLDER_ROOT', root.getId());
+  }
+  var sub = root.getFoldersByName(String(formKey || 'autre'));
+  var f = sub.hasNext() ? sub.next() : root.createFolder(String(formKey || 'autre'));
+  props.setProperty(pk, f.getId());
+  return f;
+}
+function saveAudioToDrive_(cid, formKey, mime, b64, dur) {
+  if (!b64) throw new Error('audio vide');
+  var m = String(mime || 'audio/webm'), ext = /ogg/.test(m) ? 'ogg' : /mp4|aac|m4a/.test(m) ? 'm4a' : 'webm';
+  var baseMime = m.split(';')[0];
+  var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd_HHmmss');
+  var name = (formKey || 'audio') + '_' + stamp + '_' + String(cid || Utilities.getUuid()).slice(0, 8) + '.' + ext;
+  var blob = Utilities.newBlob(Utilities.base64Decode(b64), baseMime, name);
+  var file = audioFolder_(formKey).createFile(blob);
+  if (dur) { try { file.setDescription('Durée : ' + dur + ' s — cid ' + (cid || '')); } catch (e) {} }
+  return file.getUrl();
+}
 
 /* ---------- Audio d'entretien (obligatoire, enregistré avec mention visible côté enquêteur) ----------
    Stocké en morceaux de texte dans Google Sheets (pas de Drive) : une feuille dédiée, plusieurs lignes
