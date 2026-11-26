@@ -309,7 +309,6 @@ function arecBlock(msg){
   btn.onclick = () => startAudioRecording();
   b.appendChild(p); b.appendChild(hint); b.appendChild(btn);
   const main = document.querySelector('main'); if (main) main.style.display = 'none';
-  arecWatchPermission();
 }
 function arecUnblock(){
   AREC.blocked = false;
@@ -341,35 +340,11 @@ function startAudioRecording(){
     arecBlock("L'accès au micro a été refusé ou est bloqué. Autorisez le micro pour ce site dans les paramètres du navigateur, puis appuyez sur Réessayer (ou rechargez la page si rien ne change).");
   });
 }
-let arecWatching = false;
-/* Reprise automatique : dès que le micro est autorisé (réglages du navigateur), le formulaire bloqué se débloque seul. */
-function arecCheckAndResume(){
-  if (!AREC.blocked) return;
-  try {
-    navigator.permissions.query({ name: 'microphone' }).then(st => { if (st.state === 'granted') startAudioRecording(); }).catch(() => {});
-  } catch(e){}
-}
-function arecWatchPermission(){
-  if (arecWatching) return; arecWatching = true;
-  try {
-    navigator.permissions.query({ name: 'microphone' }).then(st => {
-      st.onchange = () => { if (st.state === 'granted' && AREC.blocked) startAudioRecording(); };
-    }).catch(() => {});
-  } catch(e){}
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) arecCheckAndResume(); });
-  window.addEventListener('focus', arecCheckAndResume);
-}
-function arecRelease(){
-  if (arecTickTimer){ clearInterval(arecTickTimer); arecTickTimer = null; }
-  if (AREC.stream){ try { AREC.stream.getTracks().forEach(t => t.stop()); } catch(e){} }
-  AREC.stream = null; AREC.rec = null; AREC.chunks = []; AREC.startedAt = null;
-}
 function arecStopAndGet(){
   return new Promise(resolve => {
-    if (!AREC.rec || AREC.rec.state === 'inactive'){ arecRelease(); resolve(null); return; }
+    if (!AREC.rec || AREC.rec.state === 'inactive'){ resolve(null); return; }
     AREC.rec.onstop = () => {
       const blob = new Blob(AREC.chunks, { type: AREC.mime }), durSec = AREC.startedAt ? Math.round((Date.now() - AREC.startedAt) / 1000) : 0;
-      arecRelease(); // coupe le micro : un nouvel enregistrement démarrera avec le prochain formulaire
       const reader = new FileReader();
       reader.onloadend = () => resolve({ b64: (String(reader.result).split(',')[1] || ''), mime: AREC.mime, dur: durSec });
       reader.onerror = () => resolve(null);
@@ -377,6 +352,10 @@ function arecStopAndGet(){
     };
     try { AREC.rec.stop(); } catch(e){ resolve(null); }
   });
+}
+function arecRestart(){
+  AREC.chunks = []; AREC.startedAt = Date.now();
+  if (AREC.rec && AREC.rec.state === 'inactive'){ try { AREC.rec.start(1000); } catch(e){} }
 }
 
 function onSubmit(){
@@ -392,6 +371,7 @@ function onSubmit(){
   const payload = buildPayload();
   arecStopAndGet().then(audio => {
     if (audio){ payload._audio_b64 = audio.b64; payload._audio_mime = audio.mime; payload._audio_dur = audio.dur; }
+    arecRestart(); // reprend l'enregistrement tout de suite, sans attendre l'envoi réseau
     sendOrQueue(payload, ()=>{
       btn.disabled = false; btn.textContent = '✅ Enregistrer la réponse';
     });
@@ -473,7 +453,6 @@ function resetForm(){
   startTime = new Date();
   render();
   window.scrollTo({top:0, behavior:'smooth'});
-  startAudioRecording(); // nouveau formulaire = nouvel enregistrement
 }
 
 function showToast(msg){
