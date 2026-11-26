@@ -131,29 +131,46 @@
   /* ---------- enregistrement audio obligatoire (entretien) ----------
      Démarre automatiquement à l'ouverture, avec une mention visible et permanente. Si le micro
      est refusé ou indisponible, la saisie est bloquée (le formulaire exige l'enregistrement). */
+  var arecTickTimer = null, arecRequesting = false;
   function arecBanner() {
     var b = document.getElementById('arecBanner');
     if (!b) {
       b = document.createElement('div'); b.id = 'arecBanner';
-      b.style.cssText = 'position:sticky;top:0;z-index:20;background:#c0392b;color:#fff;text-align:center;padding:8px 12px;font-size:.85rem;font-weight:600';
+      b.style.cssText = 'position:sticky;top:0;z-index:20;background:#c0392b;color:#fff;text-align:center;padding:10px 12px;font-size:.85rem;font-weight:600';
       document.body.insertBefore(b, document.body.firstChild);
     }
     return b;
   }
   function arecTick() {
-    var b = document.getElementById('arecBanner'); if (!b || !AREC.startedAt) return;
+    var b = document.getElementById('arecBanner'); if (!b || !AREC.startedAt || AREC.blocked) return;
     var s = Math.floor((Date.now() - AREC.startedAt) / 1000), m = ('0' + Math.floor(s / 60)).slice(-2), ss = ('0' + (s % 60)).slice(-2);
     b.textContent = '🔴 Enregistrement audio en cours — ' + m + ':' + ss + ' (obligatoire pour cette enquête)';
   }
   function arecBlock(msg) {
-    var b = arecBanner(); b.style.background = '#7a1f1f'; b.textContent = '⛔ ' + msg;
+    AREC.blocked = true;
+    var b = arecBanner(); b.style.background = '#7a1f1f'; b.innerHTML = '';
+    var p = document.createElement('div'); p.textContent = '⛔ ' + msg; p.style.marginBottom = '8px';
+    var hint = document.createElement('div'); hint.style.cssText = 'font-size:.78rem;font-weight:400;opacity:.9;margin-bottom:8px';
+    hint.textContent = "Astuce : touchez l'icône (ⓘ ou 🔒) à côté de l'adresse du site, activez le micro, puis appuyez sur Réessayer.";
+    var btn = document.createElement('button'); btn.textContent = '🔄 Réessayer';
+    btn.style.cssText = 'background:#fff;color:#7a1f1f;border:none;border-radius:8px;padding:8px 18px;font-weight:700;font-size:.85rem;cursor:pointer';
+    btn.onclick = function () { startAudioRecording(); };
+    b.appendChild(p); b.appendChild(hint); b.appendChild(btn);
     var main = document.querySelector('main'); if (main) main.style.display = 'none';
   }
+  function arecUnblock() {
+    AREC.blocked = false;
+    var b = document.getElementById('arecBanner'); if (b) { b.style.background = '#c0392b'; b.innerHTML = ''; }
+    var main = document.querySelector('main'); if (main) main.style.display = '';
+  }
   function startAudioRecording() {
+    if (arecRequesting || (AREC.rec && AREC.rec.state === 'recording')) return;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
       arecBlock("Micro non disponible sur cet appareil/navigateur. Ce formulaire nécessite l'enregistrement audio."); return;
     }
+    arecRequesting = true;
     navigator.mediaDevices.getUserMedia({ audio: true, video: false }).then(function (stream) {
+      arecRequesting = false;
       AREC.stream = stream;
       var opts = {};
       ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'].some(function (t) {
@@ -163,9 +180,12 @@
       AREC.mime = AREC.rec.mimeType || 'audio/webm'; AREC.chunks = [];
       AREC.rec.ondataavailable = function (e) { if (e.data && e.data.size) AREC.chunks.push(e.data); };
       AREC.rec.start(1000); AREC.startedAt = Date.now();
-      arecBanner(); arecTick(); setInterval(arecTick, 1000);
+      arecUnblock(); arecTick();
+      if (arecTickTimer) clearInterval(arecTickTimer);
+      arecTickTimer = setInterval(arecTick, 1000);
     }).catch(function () {
-      arecBlock("L'accès au micro a été refusé ou est bloqué. Autorisez le micro pour ce site dans les paramètres du navigateur, puis rechargez la page.");
+      arecRequesting = false;
+      arecBlock("L'accès au micro a été refusé ou est bloqué. Autorisez le micro pour ce site dans les paramètres du navigateur, puis appuyez sur Réessayer (ou rechargez la page si rien ne change).");
     });
   }
   function arecStopAndGet() {
