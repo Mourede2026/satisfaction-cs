@@ -4,6 +4,7 @@
 (function () {
   var S = window.HFORM, STORE_LABELS = true; // true : le libellé du choix est enregistré ; false : son code
   var QUEUE_KEY = 'queue_' + S.key, ans = {}, byName = {}, lastPos = null, t0 = new Date();
+  var AREC = { stream: null, rec: null, chunks: [], startedAt: null, mime: '' };
   var ENQ = (typeof getEnq === 'function') ? getEnq() : null; // enquêteur inscrit : le champ « Enqueteur » est renseigné automatiquement (prénom)
   S.fields.forEach(function (f) { byName[f.name] = f; });
   function $(id) { return document.getElementById(id); }
@@ -127,6 +128,64 @@
     }, function () { b.disabled = false; info.textContent = '⚠️ Position impossible. Activez la localisation et réessayez.'; }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
   });
 
+  /* ---------- enregistrement audio obligatoire (entretien) ----------
+     Démarre automatiquement à l'ouverture, avec une mention visible et permanente. Si le micro
+     est refusé ou indisponible, la saisie est bloquée (le formulaire exige l'enregistrement). */
+  function arecBanner() {
+    var b = document.getElementById('arecBanner');
+    if (!b) {
+      b = document.createElement('div'); b.id = 'arecBanner';
+      b.style.cssText = 'position:sticky;top:0;z-index:20;background:#c0392b;color:#fff;text-align:center;padding:8px 12px;font-size:.85rem;font-weight:600';
+      document.body.insertBefore(b, document.body.firstChild);
+    }
+    return b;
+  }
+  function arecTick() {
+    var b = document.getElementById('arecBanner'); if (!b || !AREC.startedAt) return;
+    var s = Math.floor((Date.now() - AREC.startedAt) / 1000), m = ('0' + Math.floor(s / 60)).slice(-2), ss = ('0' + (s % 60)).slice(-2);
+    b.textContent = '🔴 Enregistrement audio en cours — ' + m + ':' + ss + ' (obligatoire pour cette enquête)';
+  }
+  function arecBlock(msg) {
+    var b = arecBanner(); b.style.background = '#7a1f1f'; b.textContent = '⛔ ' + msg;
+    var main = document.querySelector('main'); if (main) main.style.display = 'none';
+  }
+  function startAudioRecording() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
+      arecBlock("Micro non disponible sur cet appareil/navigateur. Ce formulaire nécessite l'enregistrement audio."); return;
+    }
+    navigator.mediaDevices.getUserMedia({ audio: true, video: false }).then(function (stream) {
+      AREC.stream = stream;
+      var opts = {};
+      ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'].some(function (t) {
+        if (window.MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) { opts.mimeType = t; return true; } return false;
+      });
+      try { AREC.rec = new MediaRecorder(stream, opts); } catch (e) { AREC.rec = new MediaRecorder(stream); }
+      AREC.mime = AREC.rec.mimeType || 'audio/webm'; AREC.chunks = [];
+      AREC.rec.ondataavailable = function (e) { if (e.data && e.data.size) AREC.chunks.push(e.data); };
+      AREC.rec.start(1000); AREC.startedAt = Date.now();
+      arecBanner(); arecTick(); setInterval(arecTick, 1000);
+    }).catch(function () {
+      arecBlock("L'accès au micro a été refusé ou est bloqué. Autorisez le micro pour ce site dans les paramètres du navigateur, puis rechargez la page.");
+    });
+  }
+  function arecStopAndGet() {
+    return new Promise(function (resolve) {
+      if (!AREC.rec || AREC.rec.state === 'inactive') { resolve(null); return; }
+      AREC.rec.onstop = function () {
+        var blob = new Blob(AREC.chunks, { type: AREC.mime }), durSec = AREC.startedAt ? Math.round((Date.now() - AREC.startedAt) / 1000) : 0;
+        var reader = new FileReader();
+        reader.onloadend = function () { resolve({ b64: (String(reader.result).split(',')[1] || ''), mime: AREC.mime, dur: durSec }); };
+        reader.onerror = function () { resolve(null); };
+        reader.readAsDataURL(blob);
+      };
+      try { AREC.rec.stop(); } catch (e) { resolve(null); }
+    });
+  }
+  function arecRestart() {
+    AREC.chunks = []; AREC.startedAt = Date.now();
+    if (AREC.rec && AREC.rec.state === 'inactive') { try { AREC.rec.start(1000); } catch (e) {} }
+  }
+
   /* ---------- validation et envoi ---------- */
   function badInt(f) {
     var v = ans[f.name]; if (empty(v)) return false; var n = Number(v), c = f.con || {};
@@ -167,17 +226,32 @@
     var btn = $('submitBtn'); btn.disabled = true; btn.textContent = 'Enregistrement...';
     var data = payload();
     function done() { btn.disabled = false; btn.textContent = '✅ Enregistrer la réponse'; }
-    if (!navigator.onLine) { queue(data); toast('Hors connexion : réponse sauvegardée localement.'); reset(); done(); return; }
-    callApi(S.fn, data).then(function (res) {
-      if (res && res.ok) { toast('✅ Réponse enregistrée avec succès.'); reset(); done(); badge(); }
-      else if (res && res.error === 'QR_INVALID') { queue(data); done(); }
-      else if (res && /^APPAREIL_/.test(res.error || '')) { queue(data); toast('📱 Téléphone non autorisé par l\'administrateur : réponse gardée sur ce téléphone.'); reset(); done(); }
-      else { queue(data); toast('Connexion instable : réponse sauvegardée localement.'); reset(); done(); }
-    }).catch(function () { queue(data); toast('Connexion instable : réponse sauvegardée localement.'); reset(); done(); });
+    arecStopAndGet().then(function (audio) {
+      if (audio) { data._audio_b64 = audio.b64; data._audio_mime = audio.mime; data._audio_dur = audio.dur; }
+      arecRestart();
+      if (!navigator.onLine) { queue(data); toast('Hors connexion : réponse sauvegardée localement.'); reset(); done(); return; }
+      callApi(S.fn, data).then(function (res) {
+        if (res && res.ok) { toast('✅ Réponse enregistrée avec succès.'); reset(); done(); badge(); }
+        else if (res && res.error === 'QR_INVALID') { queue(data); done(); }
+        else if (res && /^APPAREIL_/.test(res.error || '')) { queue(data); toast('📱 Téléphone non autorisé par l\'administrateur : réponse gardée sur ce téléphone.'); reset(); done(); }
+        else { queue(data); toast('Connexion instable : réponse sauvegardée localement.'); reset(); done(); }
+      }).catch(function () { queue(data); toast('Connexion instable : réponse sauvegardée localement.'); reset(); done(); });
+    });
   };
   function getQ() { try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); } catch (e) { return []; } }
   function setQ(q) { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); }
-  function queue(d) { if (!d._cid) d._cid = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(16).slice(2); var q = getQ(); if (!q.some(function (x) { return x._cid === d._cid; })) q.push(d); setQ(q); badge(); }
+  function queue(d) {
+    if (!d._cid) d._cid = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(16).slice(2);
+    var q = getQ(); if (!q.some(function (x) { return x._cid === d._cid; })) q.push(d);
+    try { setQ(q); }
+    catch (e) {
+      // Mémoire locale insuffisante (audio volumineux) : on garde la réponse sans l'audio.
+      if (d._audio_b64) { delete d._audio_b64; delete d._audio_mime; delete d._audio_dur; }
+      try { setQ(q); toast("⚠️ Mémoire insuffisante : l'audio de cette réponse n'a pas pu être sauvegardé hors connexion."); }
+      catch (e2) { toast('⚠️ Erreur de sauvegarde locale.'); }
+    }
+    badge();
+  }
   function badge() {
     var q = getQ(), el = $('qCount'), b = $('status-banner');
     if (q.length) { el.style.display = 'inline-block'; el.textContent = q.length; } else el.style.display = 'none';
@@ -210,4 +284,5 @@
   document.title = S.title; $('ftitle').textContent = S.emoji + ' ' + S.title;
   render(); badge(); window.syncQueue(false);
   if (navigator.geolocation) navigator.geolocation.getCurrentPosition(function (p) { lastPos = p; }, function () {}, { timeout: 8000, maximumAge: 60000 });
+  startAudioRecording();
 })();

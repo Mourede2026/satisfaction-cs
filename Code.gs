@@ -43,6 +43,12 @@ function doPost(e) {
       }
     }
     if (isSubmit && dejaRecu_(cid)) return json_({ ok: true, duplicate: true });
+    // Enregistrement audio obligatoire (Usagers, Usagers Hôpital, COGECS, Communauté) : stocké à part dans Google Sheets, par morceaux.
+    var audioB64 = d._audio_b64, audioMime = d._audio_mime; delete d._audio_b64; delete d._audio_mime; delete d._audio_dur;
+    if (isSubmit && audioB64 && FORM_KEY_[action]) {
+      try { saveAudioChunks_(cid, FORM_KEY_[action], audioMime, audioB64); d[AUDIO_COL] = cid || 'Oui'; }
+      catch (audioErr) { d[AUDIO_COL] = 'Erreur enregistrement audio : ' + audioErr.message; }
+    }
     if (action === "submitUsagers") out = appendRecord_(SHEET_USAGERS, d);
     else if (action === "submitPersonnels") out = appendRecord_(SHEET_PERSONNELS, d);
     else if (action === "submitCogecs") out = appendRecord_(SHEET_COGECS, d);
@@ -129,6 +135,7 @@ function appendRecord_(sheetName, data, keyColumnName) {
     var cols_ = [DATE_COLUMN]; if (data[ACT_COL]) cols_.push(ACT_COL, ACT_ID_COL); if (data[ENQ_ID_COL]) cols_.push(ENQ_ID_COL, ENQ_NUM_COL);
     if (data._t_start || data.start || data.end) cols_.push(START_COL, END_COL);
     if (data._dev) cols_.push(DEV_COL);
+    if (data[AUDIO_COL]) cols_.push(AUDIO_COL);
     cols_.forEach(function (nm) {
       if (hm.map[nm]) return;
       sheet.getRange(1, hm.lastCol + 1).setValue(nm);
@@ -153,6 +160,24 @@ function dejaRecu_(cid) {
   return !!sh.getRange(2, 1, sh.getLastRow() - 1, 1).createTextFinder(String(cid)).matchEntireCell(true).findNext();
 }
 function noterRecu_(cid) { if (cid) getOrCreateSheet_(ENVOIS_SHEET_NAME, ['cid', 'date']).appendRow([String(cid), new Date().toISOString()]); }
+
+/* ---------- Audio d'entretien (obligatoire, enregistré avec mention visible côté enquêteur) ----------
+   Stocké en morceaux de texte dans Google Sheets (pas de Drive) : une feuille dédiée, plusieurs lignes
+   par enregistrement. Reconstitution : trier par (cid, partie) et concaténer la colonne "contenu". */
+function saveAudioChunks_(cid, formKey, mime, b64) {
+  if (!cid || !b64) return;
+  var CH = 45000; // marge sous la limite ~50000 caractères par cellule Google Sheets
+  var total = Math.ceil(b64.length / CH);
+  var date = new Date().toISOString(), rows = [];
+  for (var i = 0; i < total; i++) rows.push([String(cid), formKey || '', date, mime || '', i + 1, total, b64.substr(i * CH, CH)]);
+  var sh = getOrCreateSheet_(AUDIO_SHEET_NAME, ['cid', 'formulaire', 'date', 'mime', 'partie', 'total', 'contenu']);
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    var startRow = sh.getLastRow() + 1;
+    sh.getRange(startRow, 1, rows.length, rows[0].length).setValues(rows);
+    SpreadsheetApp.flush();
+  } finally { lock.releaseLock(); }
+}
 
 /* ---------- Enquêtes hôpitaux (collecte uniquement) ---------- */
 var SHEET_USAGERS_H = "🏥 USAGERS_HOPITAL", SHEET_PERSONNELS_H = "🏥 PERSONNEL_HOPITAL", SHEET_COMMUNAUTE_H = "🏥 COMMUNAUTE_HOPITAL";
@@ -723,6 +748,7 @@ function handleDeleteAccessCode(token, level, name) {
 }
 
 /* ---------- Activités : un code QR par activité ---------- */
+var AUDIO_COL = 'Audio', AUDIO_SHEET_NAME = '🎙️ Audios';
 var ACT_SHEET_NAME = 'Activites', ACT_COL = 'Activité', ACT_ID_COL = 'IdActivité';
 var ACT_HEADERS = ['ID', 'Activité', 'Niveau', 'Cible', 'Formulaires', 'Communes', 'Début', 'Fin', 'Code', 'Actif', 'Créée le'];
 var ACT_FORMS = { zone: ['usagers', 'cogecs'], hopital: ['usagers', 'communaute'] };
