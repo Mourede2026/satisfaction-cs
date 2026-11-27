@@ -205,6 +205,13 @@
   });
   if(!any)h+='<tr><td colspan="8" class="empty">Aucune réponse pour le moment.</td></tr>';
   h+='</tbody></table></div></div>';
+  var fk=d.forms||[];
+  h+='<div class="box"><h2>Par enquêteur, téléphone, centre et cible</h2><p class="hint">Pour chaque téléphone d\'un compte : nombre de questionnaires de chaque cible dans chaque centre, au format <b>validés / reçus</b> (le nombre en rouge indique les rejetés).</p><div class="scroll"><table><thead><tr><th>N°</th><th>Enquêteur</th><th>Téléphone</th><th>Centre</th>'+fk.map(function(f){return '<th class="n">'+esc(FORM_LBL[f]||f)+'</th>';}).join('')+'</tr></thead><tbody>';
+  var any2=false;
+  list.forEach(function(e){(e.appareilsCentres||[]).forEach(function(ac){any2=true;
+   h+='<tr><td>'+esc(e.numero||'—')+'</td><td><b>'+esc(e.name)+'</b> <small style="color:#6b7280">'+esc(e.nom||'')+'</small></td><td>'+telLbl(ac.n,ac.code)+'</td><td>'+esc(ac.centre)+'</td>'+fk.map(function(f){var c=(ac.cibles||{})[f];return '<td class="n">'+(c?num(c.valid)+' / '+num(c.total)+(c.rej?' <span class="pill p-bad">'+num(c.rej)+'</span>':''):'—')+'</td>';}).join('')+'</tr>';});});
+  if(!any2)h+='<tr><td colspan="'+(4+fk.length)+'" class="empty">Aucune réponse pour le moment.</td></tr>';
+  h+='</tbody></table></div></div>';
   var rows=allRej();
   h+='<div class="box"><h2>Détail des questionnaires rejetés ('+rows.length+')</h2><div class="row"><select id="rejSel" onchange="rejFilter=this.value;drawRej()"><option value="">Tous les enquêteurs</option>'+list.filter(function(e){return e.nbRej>0;}).map(function(e){var k=e.key||e.id||e.name;return '<option value="'+esc(k)+'"'+(rejFilter===k?' selected':'')+'>'+esc(e.name+' '+(e.nom||''))+' ('+e.nbRej+')</option>';}).join('')+'</select><button class="alt" id="rejPdfBtn" onclick="exportRejPdf()">⬇️ PDF</button><button class="alt" id="rejXlsxBtn" onclick="exportRejXlsx()">⬇️ Excel</button></div>';
   if(rejFilter)rows=rows.filter(function(x){return (x.e.key||x.e.id||x.e.name)===rejFilter;});

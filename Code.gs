@@ -1525,7 +1525,7 @@ function suiviCompute_(act) {
   order.forEach(function (k) {
     var e = enq[k], its = (e.items || []).slice().sort(function (a, b) { return (isNaN(a.s) ? 0 : a.s) - (isNaN(b.s) ? 0 : b.s); }), prevEnd;
     e.valid = {}; e.rej = {}; e.rejDuree = 0; e.rejInterv = 0; e.rejPlafond = 0; e.centres = {}; e.centresAll = {}; var perDay = {}, devs = {}; prevEnd = {};
-    var devInfo = {}, devOrder = []; e.rejets = [];
+    var devInfo = {}, devOrder = []; e.rejets = []; var telCen = {};
     its.forEach(function (it) {
       var bad = false, rj = null, dkey = it.dev || '?'; if (it.dev) devs[it.dev] = 1;
       if (!devInfo[dkey]) { devInfo[dkey] = { code: it.dev, total: 0, valid: 0, rej: 0, first: it.s, last: it.e, n: 0 }; devOrder.push(dkey); }
@@ -1550,6 +1550,12 @@ function suiviCompute_(act) {
         }
       }
       var di = devInfo[dkey]; di.total++; if (bad) di.rej++; else di.valid++; if (!isNaN(it.s) && (isNaN(di.first) || it.s < di.first)) di.first = it.s; if (!isNaN(it.e) && (isNaN(di.last) || it.e > di.last)) di.last = it.e;
+      // Détail par téléphone, centre et cible (reçus / validés / rejetés)
+      var tcKey = it.c || '?', tcLab = it.cl || '(centre non renseigné)';
+      if (!telCen[dkey]) telCen[dkey] = {};
+      if (!telCen[dkey][tcKey]) telCen[dkey][tcKey] = { label: tcLab, f: {} };
+      var tf = telCen[dkey][tcKey].f[it.f] = telCen[dkey][tcKey].f[it.f] || { total: 0, valid: 0, rej: 0 };
+      tf.total++; if (bad) tf.rej++; else tf.valid++;
       if (bad) {
         e.rej[it.f] = (e.rej[it.f] || 0) + 1;
         if (e.rejets.length < 500) { rj.f = it.f; rj.dkey = dkey; rj.c = it.cl; rj.s = new Date(it.s).toISOString(); rj.e = new Date(it.e).toISOString(); e.rejets.push(rj); }
@@ -1564,6 +1570,13 @@ function suiviCompute_(act) {
     e.appareils = known.concat(devInfo['?'] ? ['?'] : []).map(function (k) {
       var d = devInfo[k]; return { n: d.n, code: d.code ? String(d.code).slice(-4) : '', total: d.total, valid: d.valid, rej: d.rej, first: isNaN(d.first) ? '' : new Date(d.first).toISOString(), last: isNaN(d.last) ? '' : new Date(d.last).toISOString() };
     });
+    e.appareilsCentres = [];
+    Object.keys(telCen).forEach(function (dk) {
+      Object.keys(telCen[dk]).forEach(function (ck) {
+        e.appareilsCentres.push({ n: devInfo[dk].n, code: devInfo[dk].code ? String(devInfo[dk].code).slice(-4) : '', centre: telCen[dk][ck].label, cibles: telCen[dk][ck].f });
+      });
+    });
+    e.appareilsCentres.sort(function (a, b) { return (a.n || 99) - (b.n || 99) || String(a.centre).localeCompare(String(b.centre), 'fr'); });
     e.rejets.forEach(function (r) { r.tel = devInfo[r.dkey].n; r.code = devInfo[r.dkey].code ? String(devInfo[r.dkey].code).slice(-4) : ''; delete r.dkey; });
     e.nbAppareils = Object.keys(devs).length;
   });
@@ -1601,7 +1614,7 @@ function suiviCompute_(act) {
     var attendu = (hasObj && totalDays) ? Math.round(obj * Math.min(elapsed, totalDays) / totalDays * 10) / 10 : null;
     var restant = hasObj ? Math.max(0, obj - total) : null, joursRest = totalDays ? Math.max(0, totalDays - elapsed) : null;
     var retenu = 0, nbValid = 0, nbRej = 0; formsKeys.forEach(function (fk) { retenu += Math.min(e.valid[fk] || 0, e.objByForm[fk] || 0); nbValid += e.valid[fk] || 0; nbRej += e.rej[fk] || 0; });
-    return { nbCentres: nc, centresDetail: cd, valid: e.valid, rej: e.rej, nbValid: nbValid, nbRej: nbRej, rejDuree: e.rejDuree, rejInterv: e.rejInterv, rejPlafond: e.rejPlafond, nbAppareils: e.nbAppareils, appareils: e.appareils, rejets: e.rejets, id: e.id, numero: e.numero, nom: e.nom, inscrit: e.inscrit, retenu: retenu, name: e.name, byForm: e.byForm, objByForm: e.objByForm, total: total, objectif: hasObj ? obj : null, attendu: attendu,
+    return { nbCentres: nc, centresDetail: cd, valid: e.valid, rej: e.rej, nbValid: nbValid, nbRej: nbRej, rejDuree: e.rejDuree, rejInterv: e.rejInterv, rejPlafond: e.rejPlafond, nbAppareils: e.nbAppareils, appareils: e.appareils, appareilsCentres: e.appareilsCentres, rejets: e.rejets, id: e.id, numero: e.numero, nom: e.nom, inscrit: e.inscrit, retenu: retenu, name: e.name, byForm: e.byForm, objByForm: e.objByForm, total: total, objectif: hasObj ? obj : null, attendu: attendu,
       pct: hasObj && obj > 0 ? Math.round(total / obj * 1000) / 10 : null, ecart: attendu !== null ? Math.round((total - attendu) * 10) / 10 : null,
       rythmeReel: elapsed > 0 ? Math.round(total / elapsed * 10) / 10 : null, rythmeRequis: (restant !== null && joursRest) ? Math.round(restant / joursRest * 10) / 10 : null,
       last: Object.keys(e.daily).sort().pop() || '', cumul: cumul };
