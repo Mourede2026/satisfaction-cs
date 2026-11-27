@@ -96,13 +96,15 @@
     <button class="alt" id="shBtn" onclick="exportPng(true)" style="display:none">📤 Partager l'image</button>
    </div>
   </div>
-  <div class="tabs" id="tabs"><button id="t-suivi" class="on" onclick="tab('suivi')">📈 Suivi</button><button id="t-rej" onclick="tab('rej')">🚫 Rejets</button><button id="t-tel" style="display:none" onclick="tab('tel')">📱 Téléphones</button><button id="t-conf" onclick="tab('conf')">⚙️ Configuration</button></div>
+  <div class="tabs" id="tabs"><button id="t-suivi" class="on" onclick="tab('suivi')">📈 Suivi</button><button id="t-rej" onclick="tab('rej')">🚫 Rejets</button><button id="t-tel" style="display:none" onclick="tab('tel')">📱 Téléphones</button><button id="t-pt" style="display:none" onclick="tab('pt')">📷 Par téléphone</button><button id="t-conf" onclick="tab('conf')">⚙️ Configuration</button></div>
 
   <div id="v-suivi"><div id="report"><div class="empty">Chargement…</div></div></div>
 
   <div id="v-rej" style="display:none"></div>
 
   <div id="v-tel" style="display:none"></div>
+
+  <div id="v-pt" style="display:none"></div>
 
   <div id="v-conf" style="display:none"></div>
  </div>
@@ -134,7 +136,7 @@
    var lv=r.account.level;
    if(lv!=='admin'&&lv!=='superviseur_act'){err("Ce compte n'a pas accès au suivi de la collecte (administrateur ou superviseur d'activité).");return;}
    tok=r.token;me=r.account;err('');$('login').style.display='none';$('panel').style.display='block';$('logout').style.display='inline';
-   var adm=lv==='admin';isAdm=adm;$('t-tel').style.display=adm?'':'none';$('adminLinks').style.display=adm?'inline':'none';
+   var adm=lv==='admin';isAdm=adm;$('t-tel').style.display=adm?'':'none';$('t-pt').style.display=adm?'':'none';$('adminLinks').style.display=adm?'inline':'none';
    if(navigator.canShare&&navigator.share)$('shBtn').style.display='';
    loadList();
   }).catch(function(e){err(e.message||'Erreur de connexion.');});
@@ -150,13 +152,13 @@
  }
  function pick(id){cur=id;cfg=null;data=null;if(view==='conf')loadConf();else refresh(true);}
  function tab(v){
-  view=v;['suivi','rej','tel','conf'].forEach(function(k){$('t-'+k).className=v===k?'on':'';$('v-'+k).style.display=v===k?'block':'none';});
+  view=v;['suivi','rej','tel','pt','conf'].forEach(function(k){$('t-'+k).className=v===k?'on':'';$('v-'+k).style.display=v===k?'block':'none';});
   $('expBtn').style.display=$('shBtn').style.display=(v==='suivi')?'':'none';if(v==='suivi'&&!(navigator.canShare&&navigator.share))$('shBtn').style.display='none';
-  if(v==='conf'&&!cfg)loadConf();else if(v==='suivi')refresh(true);else if(v==='tel')drawTel();else if(v==='rej'){if(data)drawRej();else refresh(true);}
+  if(v==='conf'&&!cfg)loadConf();else if(v==='suivi')refresh(true);else if(v==='tel')drawTel();else if(v==='pt'){if(data)drawPT();else refresh(true);}else if(v==='rej'){if(data)drawRej();else refresh(true);}
  }
  function refresh(manual){
   if(!cur)return;
-  api('suiviGet',{actId:cur}).then(function(r){data=r;err('');if(view==='suivi')drawReport();else if(view==='rej')drawRej();if(isAdm)telBadge();}).catch(function(e){err(e.message);});
+  api('suiviGet',{actId:cur}).then(function(r){data=r;err('');if(view==='suivi')drawReport();else if(view==='rej')drawRej();else if(view==='pt')drawPT();if(isAdm)telBadge();}).catch(function(e){err(e.message);});
  }
  setInterval(function(){if($('auto')&&$('auto').checked&&tok&&view==='suivi'&&!document.hidden)refresh(false);},60000);
 
@@ -164,7 +166,7 @@
 
  /* ---------- Téléphones des enquêteurs (autorisation par l'administrateur) ---------- */
  var isAdm=false,telData=null;
- function telBadge(){if(!cur)return;api('suiviDevices',{actId:cur}).then(function(r){telData=r;var n=(r.appareils||[]).filter(function(x){return x.statut==='ATTENTE';}).length;$('t-tel').textContent='📱 Téléphones'+(n?' ('+n+')':'');if(view==='tel')drawTelHtml();}).catch(function(){});}
+ function telBadge(){if(!cur)return;api('suiviDevices',{actId:cur}).then(function(r){telData=r;var n=(r.appareils||[]).filter(function(x){return x.statut==='ATTENTE';}).length;$('t-tel').textContent='📱 Téléphones'+(n?' ('+n+')':'');if(view==='tel')drawTelHtml();if(view==='pt'&&data)drawPT();}).catch(function(){});}
  function drawTel(){if(!telData){$('v-tel').innerHTML='<div class="empty">Chargement…</div>';}else drawTelHtml();telBadge();}
  function drawTelHtml(){
   var L=(telData&&telData.appareils)||[],by={};L.forEach(function(x){(by[x.enqId]=by[x.enqId]||{x:x,l:[]}).l.push(x);});
@@ -377,6 +379,37 @@
   }
   h+='</div><div class="foot">Généré le '+frDT(d.generatedAt)+' · Suivi de la collecte</div>';
   $('report').innerHTML=h;
+ }
+
+ /* ---------- Données par téléphone (administrateur) : une fiche par téléphone, exportable en image ---------- */
+ var ptFilter='';
+ function ptStatut(e,ap){var L=(telData&&telData.appareils)||[],st='';L.forEach(function(x){if(String(x.enqId)===String(e.id)&&ap.code&&x.code===ap.code)st=x.statut;});return st;}
+ function drawPT(){
+  var box=$('v-pt');if(!data){box.innerHTML='<div class="empty">Chargement…</div>';return;}
+  var list=data.enqueteurs||[],fk=data.forms||[],cards=[],tot={tel:0,recus:0,valid:0,rej:0};
+  list.forEach(function(e){(e.appareils||[]).forEach(function(ap,i){cards.push({e:e,ap:ap});tot.tel++;tot.recus+=ap.total||0;tot.valid+=ap.valid||0;tot.rej+=ap.rej||0;});});
+  var h='<h1>Données par téléphone</h1><p class="sub">'+esc(data.activity.name)+' · Situation au '+frDT(data.generatedAt)+'</p>';
+  h+='<div class="box no-export"><p class="hint">Chaque fiche regroupe <b>uniquement ce que ce téléphone a collecté</b> (et non le total du compte de l\'enquêteur). Le bouton <b>📷 Image</b> d\'une fiche l\'enregistre en PNG pour la partager ou l\'archiver.</p><div class="row"><select id="ptSel" onchange="ptFilter=this.value;drawPT()"><option value="">Tous les enquêteurs ('+cards.length+' téléphones)</option>'+list.filter(function(e){return (e.appareils||[]).length;}).map(function(e){var k=e.key||e.id||e.name;return '<option value="'+esc(k)+'"'+(ptFilter===k?' selected':'')+'>'+esc((e.numero?'N° '+e.numero+' · ':'')+e.name+' '+(e.nom||''))+' ('+e.appareils.length+')</option>';}).join('')+'</select></div></div>';
+  h+='<div class="kpis"><div class="kpi"><b>'+num(tot.tel)+'</b><span>Téléphones utilisés</span></div><div class="kpi"><b>'+num(tot.recus)+'</b><span>Questionnaires reçus</span></div><div class="kpi"><b>'+num(tot.valid)+'</b><span>Validés</span></div><div class="kpi"><b>'+num(tot.rej)+'</b><span>Rejetés</span></div></div>';
+  var shown=0;
+  cards.forEach(function(c,idx){
+   var e=c.e,ap=c.ap,k=e.key||e.id||e.name;if(ptFilter&&ptFilter!==k)return;shown++;
+   var st=ptStatut(e,ap),stH=st?'<span class="pill '+(st==='AUTORISE'?'p-ok':st==='ATTENTE'?'p-warn':'p-bad')+'">'+(st==='AUTORISE'?'Autorisé':st==='ATTENTE'?'En attente':'Refusé')+'</span>':'';
+   var cen=(e.appareilsCentres||[]).filter(function(x){return (x.n||0)===(ap.n||0)&&(x.code||'')===(ap.code||'');});
+   var td=ap.today||{total:0,valid:0,rej:0},bf=ap.byForm||{};
+   var id='pt_'+idx,lab='Tel'+(ap.n||0)+'_'+slug((e.numero||'')+'_'+e.name+'_'+(e.nom||''));
+   h+='<div class="box" id="'+id+'" style="margin-top:14px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;flex-wrap:wrap"><div><h2 style="margin:0">'+telLbl(ap.n,ap.code)+' '+stH+'</h2>'+
+    '<p class="hint" style="margin:6px 0 0"><b>Compte :</b> N° '+esc(e.numero||'—')+' · <b>Utilisateur :</b> '+esc(e.name)+' '+esc(e.nom||'')+'</p></div>'+
+    '<button class="alt no-export" onclick="exportSectionImg(\''+id+'\',\''+lab+'\',this)">📷 Image</button></div>'+
+    '<div class="kpis"><div class="kpi"><b>'+num(ap.total)+'</b><span>Reçus (ce téléphone)</span></div><div class="kpi"><b>'+num(ap.valid)+'</b><span>Validés</span></div><div class="kpi"><b>'+num(ap.rej)+'</b><span>Rejetés</span></div><div class="kpi"><b>'+num(td.valid)+'</b><span>Validés aujourd\'hui</span></div></div>'+
+    '<p class="hint">Première saisie : '+(ap.first?frHMS(ap.first):'—')+' · Dernière saisie : '+(ap.last?frHMS(ap.last):'—')+'</p>'+
+    '<div class="scroll"><table><thead><tr><th>Cible</th><th class="n">Reçus</th><th class="n">Validés</th><th class="n">Rejetés</th></tr></thead><tbody>'+
+    (fk.map(function(f){var x=bf[f];return x?'<tr><td>'+esc(FORM_LBL[f]||f)+'</td><td class="n">'+num(x.total)+'</td><td class="n">'+num(x.valid)+'</td><td class="n">'+(x.rej?'<span class="pill p-bad">'+num(x.rej)+'</span>':'0')+'</td></tr>':'';}).join('')||'<tr><td colspan="4" class="empty">Aucune réponse.</td></tr>')+'</tbody></table></div>'+
+    '<div class="scroll" style="margin-top:10px"><table><thead><tr><th>Centre</th>'+fk.map(function(f){return '<th class="n">'+esc(FORM_LBL[f]||f)+'<br><small>validés / reçus</small></th>';}).join('')+'</tr></thead><tbody>'+
+    (cen.length?cen.map(function(x){return '<tr><td>'+esc(x.centre)+'</td>'+fk.map(function(f){var q=(x.cibles||{})[f];return '<td class="n">'+(q?num(q.valid)+' / '+num(q.total)+(q.rej?' <span class="pill p-bad">'+num(q.rej)+'</span>':''):'—')+'</td>';}).join('')+'</tr>';}).join(''):'<tr><td colspan="'+(1+fk.length)+'" class="empty">Aucun centre renseigné.</td></tr>')+'</tbody></table></div></div>';
+  });
+  if(!shown)h+='<div class="box"><div class="empty">Aucun téléphone n\'a encore envoyé de réponse.</div></div>';
+  box.innerHTML=h;
  }
 
  /* ---------- Export en image ---------- */
