@@ -1660,10 +1660,31 @@ function suiviCompute_(act) {
     paiement = { defini: true, mode: 'centre', montantCentre: mins.montantCentre, quotas: quotas, nbInscrits: nIns, totalDu: dus2, montant: montant,
       nbCentresPrevus: mins.nbCentres, centresTouches: Object.keys(touches).length, centresComplets: Object.keys(complets).length, budgetPrevu: mins.nbCentres * mins.montantCentre };
   }
+  // Centres : terminé = chaque cible dont un quota est fixé a atteint ce quota (validés, tous enquêteurs confondus) ; sinon en cours
+  var cmap = {};
+  Object.keys(enq).forEach(function (k) {
+    var ca = enq[k].centresAll || {};
+    Object.keys(ca).forEach(function (ck) {
+      var g = cmap[ck] = cmap[ck] || { centre: ca[ck].label, recus: {}, enqs: {} };
+      g.enqs[k] = 1;
+      formsKeys.forEach(function (fk) { g.recus[fk] = (g.recus[fk] || 0) + ((ca[ck].tot || {})[fk] || 0); });
+    });
+  });
+  var csList = Object.keys(cmap).map(function (ck) {
+    var g = cmap[ck], v = centreTot[ck] || {}, valides = {}, recus = {}, done = qSum > 0, got = 0, rec = 0, rcv = 0;
+    formsKeys.forEach(function (fk) {
+      var q = quotas[fk] || 0, n = v[fk] || 0; valides[fk] = n; recus[fk] = g.recus[fk] || 0; rec += n; rcv += recus[fk];
+      if (q > 0) { got += Math.min(n, q); if (n < q) done = false; }
+    });
+    return { centre: g.centre, statut: done ? 'termine' : 'encours', valides: valides, recus: recus, recenses: rec, recusTotal: rcv, pct: qSum > 0 ? Math.round(got / qSum * 1000) / 10 : 0, enqs: Object.keys(g.enqs).length };
+  });
+  csList.sort(function (a, b) { return (a.statut === b.statut ? 0 : (a.statut === 'termine' ? -1 : 1)) || String(a.centre).localeCompare(String(b.centre), 'fr'); });
+  var csTerm = csList.filter(function (c) { return c.statut === 'termine'; }).length, csPrev = mins.nbCentres || 0;
+  var centresStats = { liste: csList, termines: csTerm, enCours: csList.length - csTerm, prevus: csPrev, nonDemarres: csPrev > 0 ? Math.max(0, csPrev - csList.length) : null, quotaDefini: qSum > 0, quotas: quotas };
   var attenduMoyen = (avgObj !== null && totalDays) ? days.map(function (d, i) { var t = Math.min(daysBetween_(act.debut || start, d) + 1, totalDays); return Math.round(avgObj * Math.max(0, t) / totalDays * 10) / 10; }) : null;
   var cumulTotal = days.map(function (d, i) { var s = 0; list.forEach(function (e) { s += e.cumul[i]; }); return s; });
   return { start: start, end: end, today: today, days: days, totalDays: totalDays, elapsed: elapsed, forms: formsKeys, enqueteurs: list, totals: totals,
-    avgObjectif: avgObj !== null ? Math.round(avgObj * 10) / 10 : null, mins: mins, quotas: quotas, paiement: paiement, attenduMoyen: attenduMoyen, cumulTotal: cumulTotal, nbObjectifs: withObj.length };
+    avgObjectif: avgObj !== null ? Math.round(avgObj * 10) / 10 : null, mins: mins, quotas: quotas, centresStats: centresStats, paiement: paiement, attenduMoyen: attenduMoyen, cumulTotal: cumulTotal, nbObjectifs: withObj.length };
 }
 /** Point du personnel : effectif attendu (saisi par l'administrateur) et réponses du formulaire personnel pendant la période. */
 function suiviPersonnel_(act, c) {

@@ -290,12 +290,12 @@
 
  function centresHtml(cs){
   if(!cs||(!cs.liste.length&&!cs.prevus))return '';
-  var nd=cs.nonDemarres,h='<div class="box"><h2>Centres</h2><div class="kpis"><div class="kpi"><b>'+num(cs.termines)+'</b><span>Terminés (score atteint)</span></div><div class="kpi"><b>'+num(cs.enCours)+'</b><span>En cours</span></div><div class="kpi"><b>'+(nd==null?'—':num(nd))+'</b><span>Non démarrés'+(nd==null?' (nombre de centres prévus non renseigné)':'')+'</span></div>'+(cs.prevus?'<div class="kpi"><b>'+num(cs.prevus)+'</b><span>Centres prévus</span></div>':'')+'</div>';
+  var nd=cs.nonDemarres,h='<div class="box" id="sec-centres"><div class="secHead"><h2>🏥 Centres : terminés et recensés</h2><button class="alt no-export secImgBtn" onclick="exportSectionImg(\'sec-centres\',\'centres\',this)">📷 Image</button></div><div class="kpis"><div class="kpi"><b>'+num(cs.termines)+'</b><span>Terminés (score atteint)</span></div><div class="kpi"><b>'+num(cs.enCours)+'</b><span>En cours</span></div><div class="kpi"><b>'+(nd==null?'—':num(nd))+'</b><span>Non démarrés'+(nd==null?' (nombre de centres prévus non renseigné)':'')+'</span></div>'+(cs.prevus?'<div class="kpi"><b>'+num(cs.prevus)+'</b><span>Centres prévus</span></div>':'')+'</div>';
   if(!cs.quotaDefini)h+='<p class="hint">Définissez le quota par centre dans la Configuration pour distinguer les centres terminés des centres en cours.</p>';
   if(cs.liste.length){
-   var fk=Object.keys(cs.quotas||{}).filter(function(k){return cs.quotas[k]>0;});
-   h+='<div class="scroll"><table><thead><tr><th>Centre</th><th>Statut</th>'+fk.map(function(k){return '<th class="n">'+esc(FORM_LBL[k]||k)+'</th>';}).join('')+'<th>Avancement</th><th class="n">Enquêteurs</th></tr></thead><tbody>'+cs.liste.map(function(c){
-    return '<tr><td>'+esc(c.centre)+'</td><td><span class="pill '+(c.statut==='termine'?'p-ok':'p-warn')+'">'+(c.statut==='termine'?'Terminé':'En cours')+'</span></td>'+fk.map(function(k){return '<td class="n">'+num(c.valides[k]||0)+' / '+num(cs.quotas[k])+'</td>';}).join('')+'<td>'+bar(c.pct,barColor(c.pct))+'<small>'+num(c.pct,1)+' %</small></td><td class="n">'+num(c.enqs)+'</td></tr>';}).join('')+'</tbody></table></div>';
+   var fk=Object.keys(cs.quotas||{}).filter(function(k){return cs.quotas[k]>0;});if(!fk.length)fk=(data&&data.forms)||[];
+   h+='<div class="scroll"><table><thead><tr><th>Centre</th><th>Statut</th>'+fk.map(function(k){return '<th class="n">'+esc(FORM_LBL[k]||k)+'</th>';}).join('')+'<th class="n">Recensés (validés)</th><th>Avancement</th><th class="n">Enquêteurs</th></tr></thead><tbody>'+cs.liste.map(function(c){
+    return '<tr><td>'+esc(c.centre)+'</td><td><span class="pill '+(c.statut==='termine'?'p-ok':'p-warn')+'">'+(c.statut==='termine'?'Terminé':'En cours')+'</span></td>'+fk.map(function(k){return '<td class="n">'+num(c.valides[k]||0)+(cs.quotas[k]?' / '+num(cs.quotas[k]):'')+'</td>';}).join('')+'<td class="n"><b>'+num(c.recenses)+'</b>'+(c.recusTotal>c.recenses?'<br><small style="color:#6b7280">'+num(c.recusTotal)+' reçus</small>':'')+'</td><td>'+bar(c.pct,barColor(c.pct))+'<small>'+num(c.pct,1)+' %</small></td><td class="n">'+num(c.enqs)+'</td></tr>';}).join('')+'</tbody></table></div>';
   }
   return h+'</div>';
  }
