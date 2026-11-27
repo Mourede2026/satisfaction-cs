@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Administration - Rapports et présentations</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pptxgenjs/3.12.0/pptxgen.bundle.js"></script>
+<style>
+ :root{--brand:#0f4c81}
+ *{box-sizing:border-box}
+ body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f4f6f8;margin:0;color:#1f2937}
+ header{background:var(--brand);color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+ header h1{margin:0;font-size:1.05rem}
+ header nav a,header nav button{color:#cfe3f7;text-decoration:none;font-size:.85rem;margin-left:12px;background:none;border:0;cursor:pointer;font-family:inherit;padding:0}
+ main{max-width:1020px;margin:0 auto;padding:16px}
+ .box{background:#fff;border-radius:14px;padding:18px;margin:0 0 14px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+ #login{max-width:360px;margin:40px auto}
+ h2{font-size:1rem;color:var(--brand);margin:0 0 4px} h3{font-size:.92rem;margin:14px 0 4px;color:var(--brand)}
+ .hint{color:#6b7280;font-size:.82rem;margin:0 0 10px}
+ input,button,select,textarea{padding:10px 12px;border-radius:10px;font-size:.95rem;font-family:inherit}
+ input,select,textarea{width:100%;border:1px solid #dfe4ea;margin-top:4px;background:#fff}
+ textarea{min-height:90px;resize:vertical}
+ label.l{font-size:.78rem;color:#6b7280;display:block;margin-top:10px}
+ button.pri{border:0;background:var(--brand);color:#fff;font-weight:600;cursor:pointer}
+ button.alt{background:#fff;color:var(--brand);border:1px solid var(--brand);cursor:pointer;font-size:.85rem;padding:8px 12px}
+ button.dng{background:#fff;color:#c0392b;border:1px solid #c0392b;cursor:pointer;font-size:.85rem;padding:8px 12px}
+ button:disabled{opacity:.45;cursor:default}
+ .grid{display:grid;gap:10px}
+ @media (min-width:700px){.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:1fr 1fr 1fr}.g4{grid-template-columns:1fr 1fr 1fr 1fr}}
+ .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
+ .badge{font-size:.72rem;padding:2px 8px;border-radius:999px;background:#eef3f8;color:var(--brand);margin-left:6px;white-space:nowrap}
+ .badge.ok{background:#e6f6ee;color:#1a7f4b}.badge.soon{background:#fff4e0;color:#b26a00}
+ #err{color:#c0392b;text-align:center;min-height:1.2em;font-size:.9rem}
+ #toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#1f2937;color:#fff;padding:10px 16px;border-radius:999px;font-size:.85rem;display:none;z-index:50;max-width:92vw;text-align:center}
+ .chk{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px}.chk label{font-size:.88rem;display:flex;align-items:center;gap:6px;cursor:pointer}.chk input{width:auto;margin:0}
+ .rl{display:flex;align-items:center;gap:8px;padding:10px 4px;border-top:1px solid #eef1f4;flex-wrap:wrap}.rl .t{flex:1;min-width:180px;font-weight:600}.rl .t small{display:block;font-weight:400;color:#6b7280;font-size:.75rem}
+ table.pg{border-collapse:collapse;width:100%;font-size:.85rem;margin-top:8px}table.pg th,table.pg td{border:1px solid #e5e7eb;padding:6px 8px;text-align:center}table.pg th{background:#eef3f8;color:var(--brand)}table.pg td:first-child,table.pg th:first-child{text-align:left}
+ table.pg td.low{background:#fdecea;color:#c0392b;font-weight:600}table.pg td.ok{background:#e6f6ee;color:#1a7f4b}
+ .bar{height:10px;background:#e5e7eb;border-radius:999px;overflow:hidden;margin:6px 0}.bar i{display:block;height:100%;background:#2e9e5b;width:0}
+ .stat{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0}.stat div{background:#eef3f8;border-radius:10px;padding:8px 12px;font-size:.82rem}.stat b{display:block;font-size:1.2rem;color:var(--brand)}
+ .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px;border-bottom:2px solid #e5e7eb}.tabs button{background:none;border:0;border-bottom:3px solid transparent;color:#64748b;padding:8px 12px;font-size:.88rem;cursor:pointer;margin-bottom:-2px;border-radius:0}.tabs button.on{color:var(--brand);border-bottom-color:var(--brand);font-weight:700}
+ .imgs{display:grid;gap:12px}@media (min-width:700px){.imgs{grid-template-columns:repeat(3,1fr)}}.ic{border:1px solid #e5e7eb;border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:6px;align-items:flex-start}.ic small{color:#6b7280;font-size:.75rem}.pv{width:100%;height:120px;border:1px dashed #cbd5e1;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:.8rem;overflow:hidden}.pv img{max-width:100%;max-height:100%}
+ label.fb{cursor:pointer;padding:8px 12px;border:1px solid var(--brand);border-radius:10px;color:var(--brand);font-size:.85rem;background:#fff;display:inline-block}
+ .fg2{display:flex;gap:10px;align-items:center;border:1px solid #e5e7eb;border-radius:12px;padding:8px;margin-top:8px;flex-wrap:wrap}.fg2 img{width:84px;height:64px;object-fit:contain;border:1px solid #eef1f4;border-radius:8px}.fg2 input,.fg2 select{margin:0;flex:1;min-width:150px}
+ #pv{max-height:70vh;overflow:auto;border:1px solid #e5e7eb;border-radius:10px;padding:14px;background:#fff;margin-top:10px}
+ .rp{font-size:.9rem;line-height:1.5}.rp h2{font-size:1.15rem;margin:22px 0 6px;border-bottom:2px solid var(--brand);padding-bottom:3px}.rp h3{font-size:1rem;margin:16px 0 4px}.rp h4{font-size:.95rem;margin:12px 0 3px;color:#1f2937}.rp h5{font-size:.9rem;margin:10px 0 2px;color:var(--brand)}
+ .rp p{margin:5px 0;text-align:justify}.rp .cover{text-align:center;padding:16px 0 20px;border-bottom:1px solid #e5e7eb}.rp .ct{font-size:1.25rem;font-weight:700;color:var(--brand)}.rp .cs{margin:6px 0}.rp .cm{font-size:.8rem;color:#6b7280}.rp .dr{display:inline-block;margin-top:8px;background:#fdecea;color:#c0392b;font-weight:700;padding:4px 10px;border-radius:8px;font-size:.8rem}
+ .rp .cap{font-weight:700;color:var(--brand);font-size:.8rem;margin:10px 0 3px}.rp .tw{overflow-x:auto}.rp table{border-collapse:collapse;width:100%;font-size:.8rem}.rp th{background:var(--brand);color:#fff;padding:4px 6px}.rp td{border:1px solid #d6dde5;padding:3px 6px}.rp td.n{text-align:center}.rp tr.lb td{background:#e8f0f8;font-weight:700}.rp .fg{text-align:center}.rp .fg img{max-width:100%}.rp .fg .cap{text-align:center}
+</style>
+</head><body>
+<header><h1>📑 Rapports et présentations</h1>
+ <nav><a href="index.html">Accueil</a><a href="AdminQR.html">⚙️ Administration</a><a href="AdminSuivi.html">📈 Suivi</a><a href="AdminDashboard.html">📊 Tableau de bord</a><a href="AdminAttestations.html">🎓 Attestations</a><button id="logout" style="display:none" onclick="location.reload()">Déconnexion</button></nav></header>
+<main>
+ <div id="login" class="box">
+  <h2>Compte administrateur</h2><p class="hint">Les rapports et présentations en cours sont réservés au compte administrateur principal.</p>
+  <label class="l" for="u">Identifiant</label><input id="u" autocomplete="username">
+  <label class="l" for="p">Mot de passe</label><input id="p" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')login()">
+  <div class="row"><button class="pri" style="width:100%" onclick="login()">Se connecter</button></div><div id="err"></div>
+ </div>
+
+ <div id="panel" style="display:none">
+  <!-- Liste -->
+  <div class="box" id="listBox">
+   <div class="row" style="margin:0"><h2 style="flex:1">Rapports enregistrés</h2><button class="pri" onclick="newReport()">+ Nouveau rapport</button></div>
+   <p class="hint">Chaque rapport garde ses paramètres (période, activité, population, textes). À chaque ouverture, les chiffres sont recalculés à partir de la base : vous pouvez donc le « meubler » dès le début de la collecte.</p>
+   <div id="rlist"></div>
+  </div>
+
+  <!-- Éditeur -->
+  <div id="editor" style="display:none">
+   <div class="box">
+    <div class="row" style="margin:0"><h2 style="flex:1" id="edTitle">Rapport</h2><button class="alt" onclick="closeEditor()">← Retour à la liste</button></div>
+    <div class="row">
+     <button class="pri" onclick="saveReport()">💾 Enregistrer</button>
+     <button class="alt" onclick="refresh(true)">🔄 Actualiser les données</button>
+     <button class="alt" id="bDoc" onclick="download('docx')">📄 Rapport (Word)</button>
+     <button class="alt" id="bPpt" onclick="download('pptx')">📊 Présentation (PowerPoint)</button>
+     <span id="state" class="hint" style="margin:0"></span>
+    </div>
+    <div class="tabs" id="tabs">
+     <button data-t="rap" class="on" onclick="tab('rap')">1. Rapport et période</button>
+     <button data-t="str" onclick="tab('str')">2. Structure</button>
+     <button data-t="img" onclick="tab('img')">3. Images</button>
+     <button data-t="txt" onclick="tab('txt')">4. Textes</button>
+     <button data-t="prog" onclick="tab('prog')">5. Avancement</button>
+     <button data-t="pv" onclick="tab('pv')">6. Aperçu</button>
+    </div>
+   </div>
+
+   <div class="box tp" id="t-rap">
+    <h2>Rapport et période</h2>
+    <label class="l" for="titre">Titre du rapport (pour la liste)</label><input id="titre" placeholder="Ex. ZS ZoBoZa — année 2026">
+    <div class="grid g3">
+     <div><label class="l" for="niveau">Type de structure</label><select id="niveau" onchange="onNiveau()"><option value="zone">Zone sanitaire (format ZoBoZa 2026)</option><option value="hopital">Hôpital de zone (canevas HZ 2026)</option></select></div>
+     <div><label class="l" for="structure" id="lbStruct">Zone sanitaire</label><select id="structure" onchange="onStruct()"></select></div>
+     <div><label class="l" for="statut">Statut</label><select id="statut"><option value="brouillon">Brouillon (collecte en cours)</option><option value="final">Version finale</option></select></div>
+    </div>
+    <p class="hint" style="margin-top:12px">Cochez une période pour un rapport semestriel, ou plusieurs (ex. Semestre 1 + Semestre 2) pour le rapport annuel : les données sont regroupées et le rapport compare les périodes entre elles. Sans coche, toutes les réponses sont prises.</p>
+    <label class="l">Périodes</label><div class="chk" id="chkP"></div>
+    <label class="l">Activités (facultatif — limite le rapport aux réponses de ces activités)</label><div class="chk" id="chkA"></div>
+    <label class="l">Comparer à (période(s) de référence, ex. l'année précédente)</label><div class="chk" id="chkC"></div>
+    <div class="grid g3"><div><label class="l" for="f-quota">Objectif d'usagers par centre (suivi de collecte)</label><input id="f-quota" inputmode="numeric" placeholder="60"></div></div>
+   </div>
+
+   <div class="box tp" id="t-str" style="display:none">
+    <h2>Structure évaluée</h2>
+    <p class="hint">Ces informations sont reprises automatiquement pour la même structure lors des prochaines évaluations. La densité se calcule toute seule.</p>
+    <div class="row" style="margin-top:0"><button class="alt" onclick="importFiche(true)">↺ Reprendre les informations du dernier rapport de cette structure</button></div>
+    <div class="grid g3">
+     <div><label class="l" for="f-nom">Nom affiché de la structure</label><input id="f-nom" placeholder="Ex. ZoBoZa ou Kandi"></div>
+     <div><label class="l" for="f-dep">Département</label><input id="f-dep" placeholder="Ex. Zou"></div>
+     <div id="zsOnly" style="display:none"><label class="l" for="f-zs">Zone sanitaire de l'hôpital</label><input id="f-zs" placeholder="Ex. Kandi-Gogounou-Ségbana"></div>
+    </div>
+    <div class="grid g4">
+     <div><label class="l" for="f-pop">Population totale</label><input id="f-pop" inputmode="numeric" placeholder="Ex. 509 893" oninput="updDens()"></div>
+     <div><label class="l" for="f-popc">Population cible</label><input id="f-popc" inputmode="numeric" placeholder="Ex. 120 000"></div>
+     <div><label class="l" for="f-sup">Superficie (km²)</label><input id="f-sup" inputmode="numeric" placeholder="Ex. 13 031" oninput="updDens()"></div>
+     <div><label class="l">Densité (calculée)</label><input id="f-dens" readonly placeholder="— hab./km²" style="background:#f4f6f8"></div>
+    </div>
+    <div class="grid g2" id="zoneOnly">
+     <div><label class="l" for="f-pub">Formations sanitaires publiques</label><input id="f-pub" inputmode="numeric"></div>
+     <div><label class="l" for="f-priv">Formations sanitaires privées</label><input id="f-priv" inputmode="numeric"></div>
+    </div>
+    <div class="grid g3">
+     <div><label class="l" for="f-edition">Édition / année</label><input id="f-edition" inputmode="numeric" maxlength="4" placeholder="2026"></div>
+     <div><label class="l" for="f-periode">Période (texte du titre)</label><input id="f-periode" placeholder="Ex. Année 2026"></div>
+     <div><label class="l" for="f-date">Date sur la couverture</label><input id="f-date" placeholder="Ex. Juillet 2026 (vide = mois en cours)"></div>
+    </div>
+    <div class="grid g3">
+     <div id="covOnly"><label class="l" for="f-cov">Communes sur la couverture</label><input id="f-cov" placeholder="Ex. Zogbodomey – Bohicon – Za-Kpota (vide = automatique)"></div>
+     <div><label class="l" for="f-cons">Cabinet / consultant</label><input id="f-cons" placeholder="Ets MOUREDE &amp; Associés"></div>
+     <div><label class="l" for="f-cmd">Commanditaire</label><input id="f-cmd" placeholder="Administration de la Zone Sanitaire"></div>
+    </div>
+    <div class="grid g3"><div><label class="l" for="f-pres">Présentateur</label><input id="f-pres" placeholder="Équipe de Consultants"></div></div>
+   </div>
+
+   <div class="box tp" id="t-img" style="display:none">
+    <h2>Images du rapport</h2>
+    <p class="hint">Chaque image s'insère automatiquement à la bonne place, avec sa légende numérotée dans la liste des figures. Les images sont réduites pour rester légères.</p>
+    <div class="imgs">
+     <div class="ic"><div class="pv" id="logoPv">Logo</div><b>Logo du centre</b><small>Apparaît sur la couverture du Word et du PowerPoint.</small>
+      <label class="fb">Choisir<input type="file" accept="image/png,image/jpeg" style="display:none" onchange="onImg(this,'logo')"></label><button class="dng" onclick="setImg('logo','')">Retirer</button></div>
+     <div class="ic"><div class="pv" id="carPv">Carte</div><b>Carte de la zone</b><small>Chapitre « Cadre d'étude » (Word) et diapositive « Méthodes » (hôpital).</small>
+      <label class="fb">Choisir<input type="file" accept="image/png,image/jpeg" style="display:none" onchange="onImg(this,'carte')"></label><button class="dng" onclick="setImg('carte','')">Retirer</button></div>
+     <div class="ic"><div class="pv" id="phPv">Photo</div><b>Photo de l'hôpital</b><small>Chapitre « Cadre d'étude » du rapport hôpital.</small>
+      <label class="fb">Choisir<input type="file" accept="image/png,image/jpeg" style="display:none" onchange="onImg(this,'photo')"></label><button class="dng" onclick="setImg('photo','')">Retirer</button></div>
+    </div>
+    <h3>Figures supplémentaires (4 au maximum)</h3>
+    <div id="figs"></div>
+    <div class="row"><label class="fb">+ Ajouter une image<input type="file" accept="image/png,image/jpeg" style="display:none" onchange="addFig(this)"></label></div>
+   </div>
+
+   <div class="box tp" id="t-txt" style="display:none">
+    <h2>Textes</h2>
+    <p class="hint">Laissez vide pour utiliser le texte automatique du canevas 2026.</p>
+    <div id="hospTxt" style="display:none">
+     <label class="l" for="f-pz">Présentation de la zone sanitaire (chapitre « Cadre d'étude »)</label><textarea id="f-pz"></textarea>
+     <label class="l" for="f-ph">Présentation de l'hôpital de zone</label><textarea id="f-ph"></textarea>
+    </div>
+    <label class="l" for="f-intro">Paragraphe complémentaire pour l'introduction</label><textarea id="f-intro"></textarea>
+    <label class="l" for="f-cadre">Cadre d'étude — zone sanitaire (remplace le texte automatique ; un paragraphe par ligne)</label><textarea id="f-cadre"></textarea>
+    <label class="l" for="f-conc">Conclusion (remplace le texte automatique)</label><textarea id="f-conc"></textarea>
+    <label class="l" for="f-reco">Recommandations (une par ligne ; vide = recommandations automatiques déduites des domaines les moins bien notés)</label><textarea id="f-reco" style="min-height:130px"></textarea>
+    <div class="row"><button class="alt" onclick="fillRecos()">↻ Remplir avec les recommandations automatiques</button></div>
+   </div>
+
+   <div class="box tp" id="t-prog" style="display:none">
+    <h2>Avancement de la collecte</h2><p class="hint">Cliquez sur « Actualiser les données » pour recalculer.</p><div id="prog"></div>
+   </div>
+   <div class="box tp" id="t-pv" style="display:none">
+    <h2>Aperçu du rapport (brouillon en cours)</h2>
+    <div id="pv"><p class="hint">Cliquez sur « Actualiser les données » pour afficher l'aperçu.</p></div>
+   </div>
+  </div>
+ </div>
+</main>
+<div id="toast"></div>
+<script src="config.js"></script>
+<script src="hlabels.js"></script>
+<script src="hz_textes.js"></script>
+<script src="rapport.js"></script>
+<script>
+ var tok='', opts=null, list=[], R=null, DATA=null, busy=false;
+ var SEC={cadre:"Cadre d'étude",methodes:'Méthodes',resultats:'Résultats',annexes:'Annexes'};
+ function $(i){return document.getElementById(i);}
+ function err(t){$('err').textContent=t||'';}
+ function toast(t,ms){var x=$('toast');x.textContent=t;x.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(function(){x.style.display='none';},ms||2600);}
+ function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+ function frDate(s){return s?s.split('-').reverse().join('/'):'';}
+ function saveBlob(b,name){var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove();},1500);}
+ function slug(t){return String(t).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9]+/g,'_').replace(/^_|_$/g,'').slice(0,60)||'rapport';}
+ function api(action,data){data=data||{};data.token=tok;return callApi(action,data).then(function(r){if(!r||!r.ok){throw new Error(r&&r.error||'Erreur');}return r;});}
+ function tab(n){
+  Array.prototype.forEach.call(document.querySelectorAll('.tp'),function(p){p.style.display=p.id==='t-'+n?'block':'none';});
+  Array.prototype.forEach.call(document.querySelectorAll('#tabs button'),function(b){b.className=b.getAttribute('data-t')===n?'on':'';});
+ }
+
+ function login(){
+  err('Connexion…');
+  callApi('accountLogin',{username:$('u').value.trim()},$('p').value).then(function(r){
+   if(!r||!r.ok){err(r&&r.error||'Échec de connexion');return;}
+   if(r.account.level!=='admin'){err("Réservé au compte administrateur principal.");return;}
+   tok=r.token;err('');$('login').style.display='none';$('panel').style.display='block';$('logout').style.display='inline';load();
+  }).catch(function(e){err(e.message||'Erreur de connexion.');});
+ }
+ function load(){
+  Promise.all([api('reportOptions'),api('reportList')]).then(function(a){opts=a[0];list=a[1].rapports||[];drawList();}).catch(function(e){toast(e.message,4000);});
+ }
+
+ /* ---------- Liste ---------- */
+ function drawList(){
+  var h=list.map(function(r){
+   return '<div class="rl"><div class="t">'+esc(r.titre)+'<small>'+(r.niveau==='hopital'?'Hôpital':'Zone sanitaire')+' — '+esc(r.structure||'—')+' · modifié '+esc(String(r.modifie||'').replace('T',' ').slice(0,16))+'</small></div><span class="badge '+(r.statut==='final'?'ok':'soon')+'">'+(r.statut==='final'?'Finale':'Brouillon')+'</span><button class="pri" style="padding:8px 14px" onclick="openReport(\''+esc(r.id)+'\')">Ouvrir</button><button class="alt" onclick="dupReport(\''+esc(r.id)+'\')">Dupliquer</button><button class="dng" onclick="delReport(\''+esc(r.id)+'\')">Supprimer</button></div>';
+  }).join('');
+  $('rlist').innerHTML=h||'<p class="hint">Aucun rapport pour le moment. Cliquez sur « Nouveau rapport ».</p>';
+ }
+ function blank(){return {id:'',titre:'',niveau:'zone',structure:'',periodes:[],activites:[],comparaison:[],statut:'brouillon',params:{},logo:'',carte:'',photo:'',figures:[]};}
+ function newReport(){R=blank();DATA=null;showEditor();}
+ function clone(r){var c=JSON.parse(JSON.stringify(r));c.figures=c.figures||[];return c;}
+ function openReport(id){var r=list.filter(function(x){return x.id===id;})[0];if(!r)return;R=clone(r);DATA=null;showEditor();refresh(false);}
+ function dupReport(id){var r=list.filter(function(x){return x.id===id;})[0];if(!r)return;R=clone(r);R.id='';R.titre=r.titre+' (copie)';R.statut='brouillon';DATA=null;showEditor();toast('Copie créée : modifiez puis enregistrez.');}
+ function delReport(id){if(!confirm('Supprimer définitivement ce rapport (paramètres, textes et images saisis) ? Les données de la collecte ne sont pas touchées.'))return;api('reportDelete',{id:id}).then(function(){list=list.filter(function(x){return x.id!==id;});drawList();toast('Rapport supprimé.');}).catch(function(e){toast(e.message,4000);});}
+ function closeEditor(){$('editor').style.display='none';$('listBox').style.display='block';R=null;}
+
+ /* ---------- Éditeur ---------- */
+ function chkHtml(name,items,sel,idf,lab){return items.length?items.map(function(it){var id=idf(it);return '<label><input type="checkbox" name="'+name+'" value="'+esc(id)+'"'+(sel.indexOf(id)>=0?' checked':'')+'>'+esc(lab(it))+'</label>';}).join(''):'<span class="hint">Aucun (créez-en dans Administration)</span>';}
+ var FM={'f-nom':'nomAffiche','f-edition':'edition','f-periode':'periodeTexte','f-pop':'population','f-popc':'populationCible','f-sup':'superficie','f-dep':'departement','f-quota':'quotaUsagers','f-pub':'nbFsPub','f-priv':'nbFsPriv','f-cons':'consultant','f-cmd':'commanditaire','f-pres':'presentateur','f-date':'dateRapport','f-zs':'nomZoneSanitaire','f-cov':'nomCouverture','f-intro':'introExtra','f-pz':'presZone','f-ph':'presHopital','f-cadre':'cadreTexte','f-conc':'conclusionTexte'};
+ function showEditor(){
+  $('listBox').style.display='none';$('editor').style.display='block';
+  var p=R.params||{};
+  $('edTitle').textContent=R.id?'Modifier le rapport':'Nouveau rapport';
+  $('titre').value=R.titre||'';$('niveau').value=R.niveau||'zone';$('statut').value=R.statut||'brouillon';
+  onNiveau(true);
+  $('chkP').innerHTML=chkHtml('cp',opts.periods,R.periodes,function(x){return x.id;},function(x){return x.label+' ('+frDate(x.start)+' → '+frDate(x.end)+')';});
+  $('chkC').innerHTML=chkHtml('cc',opts.periods,R.comparaison,function(x){return x.id;},function(x){return x.label;});
+  $('chkA').innerHTML=chkHtml('ca',opts.activities,R.activites,function(x){return x.id;},function(x){return x.name;});
+  Object.keys(FM).forEach(function(k){$(k).value=p[FM[k]]||'';});
+  $('f-reco').value=(p.recos||[]).join('\n');
+  updDens();renderImgs();$('state').textContent='';
+  $('pv').innerHTML='<p class="hint">Cliquez sur « Actualiser les données » pour afficher l\'aperçu.</p>';$('prog').innerHTML='';
+  tab('rap');
+ }
+ function onStruct(){if(R&&!R.id){importFiche(false);}}
+ function onNiveau(keep){
+  var n=$('niveau').value,sel=$('structure');
+  $('lbStruct').textContent=n==='hopital'?'Hôpital':'Zone sanitaire';$('zoneOnly').style.display=n==='hopital'?'none':'grid';$('zsOnly').style.display=n==='hopital'?'block':'none';$('hospTxt').style.display=n==='hopital'?'block':'none';$('covOnly').style.display=n==='hopital'?'none':'block';
+  var items=n==='hopital'?opts.hospitals:opts.zones.map(function(z){return z.name;});
+  sel.innerHTML=(items.length?'':'<option value="">Aucune structure trouvée</option>')+items.map(function(x){return '<option value="'+esc(x)+'">'+esc(x)+'</option>';}).join('');
+  if(keep&&R&&R.structure&&items.indexOf(R.structure)>=0)sel.value=R.structure;else if(!keep&&R&&!R.id)importFiche(false);
+ }
+ function checked(name){return Array.prototype.map.call(document.querySelectorAll('input[name="'+name+'"]:checked'),function(i){return i.value;});}
+ /* densité automatique : population / superficie */
+ function updDens(){var d=RapportBase.density({population:$('f-pop').value,superficie:$('f-sup').value});$('f-dens').value=d.dens?RapportBase.fN(d.dens)+' hab./km²':'';}
+ /* images : logo, carte, photo et figures supplémentaires */
+ function shrink(file,cb,keepAlpha){
+  var fr=new FileReader();fr.onload=function(){var im=new Image();im.onload=function(){
+   var sizes=[[640,.72],[520,.65],[440,.6],[380,.55],[320,.5],[260,.45],[200,.4],[150,.35]],out='';
+   for(var i=0;i<sizes.length&&!out;i++){
+    var r=Math.min(1,sizes[i][0]/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.max(1,Math.round(im.width*r));c.height=Math.max(1,Math.round(im.height*r));
+    var g=c.getContext('2d'),png=keepAlpha&&/png/i.test(file.type),u;
+    if(png){g.drawImage(im,0,0,c.width,c.height);u=c.toDataURL('image/png');}
+    if(!png||u.length>44000){g.clearRect(0,0,c.width,c.height);g.fillStyle='#fff';g.fillRect(0,0,c.width,c.height);g.drawImage(im,0,0,c.width,c.height);u=c.toDataURL('image/jpeg',sizes[i][1]);}
+    if(u.length<=44000)out=u;
+   }
+   if(!out){toast('Image trop complexe pour être enregistrée : choisissez une image plus simple.',4500);return;}
+   cb(out);
+  };im.src=fr.result;};fr.readAsDataURL(file);
+ }
+ function setImg(which,u){R[which]=u||'';renderImgs();}
+ function onImg(inp,which){var f=inp.files&&inp.files[0];if(!f)return;shrink(f,function(u){setImg(which,u);toast('Image ajoutée : enregistrez le rapport.');inp.value='';},which==='logo');}
+ function addFig(inp){
+  var f=inp.files&&inp.files[0];if(!f)return;
+  if(R.figures.length>=4){toast('4 figures supplémentaires au maximum.');inp.value='';return;}
+  shrink(f,function(u){R.figures.push({legende:'',section:'resultats',src:u});renderImgs();inp.value='';},false);
+ }
+ function figSet(i,k,v){R.figures[i][k]=v;}
+ function figDel(i){R.figures.splice(i,1);renderImgs();}
+ function renderImgs(){
+  [['logo','logoPv','Logo'],['carte','carPv','Carte'],['photo','phPv','Photo']].forEach(function(a){$(a[1]).innerHTML=R[a[0]]?'<img src="'+R[a[0]]+'" alt="">':a[2];});
+  $('figs').innerHTML=R.figures.map(function(f,i){
+   return '<div class="fg2"><img src="'+f.src+'" alt=""><input placeholder="Légende de la figure" value="'+esc(f.legende)+'" oninput="figSet('+i+',\'legende\',this.value)"><select onchange="figSet('+i+',\'section\',this.value)">'+Object.keys(SEC).map(function(k){return '<option value="'+k+'"'+(f.section===k?' selected':'')+'>Dans : '+SEC[k]+'</option>';}).join('')+'</select><button class="dng" onclick="figDel('+i+')">Retirer</button></div>';
+  }).join('')||'<p class="hint">Aucune figure supplémentaire.</p>';
+ }
+ function readForm(){
+  var g=function(i){return $(i).value.trim();};
+  R.titre=g('titre');R.niveau=$('niveau').value;R.structure=$('structure').value;R.statut=$('statut').value;
+  R.periodes=checked('cp');R.activites=checked('ca');R.comparaison=checked('cc');
+  var p={};Object.keys(FM).forEach(function(k){p[FM[k]]=g(k);});
+  p.recos=$('f-reco').value.split(/\n+/).map(function(x){return x.trim();}).filter(Boolean);
+  R.params=p;
+ }
+ function saveReport(quiet){
+  readForm();
+  if(!R.titre){R.titre=(R.structure?R.structure+' — ':'')+(R.params.edition||new Date().getFullYear());$('titre').value=R.titre;}
+  return api('reportSave',{report:{id:R.id,logo:R.logo||'',carte:R.carte||'',photo:R.photo||'',figures:R.figures||[],titre:R.titre,niveau:R.niveau,structure:R.structure,periodes:R.periodes,activites:R.activites,comparaison:R.comparaison,params:R.params,statut:R.statut}}).then(function(r){
+   R.id=r.id;R.modifie=r.modifie;var i=-1;list.forEach(function(x,k){if(x.id===R.id)i=k;});var c=clone(R);if(i>=0)list[i]=c;else list.unshift(c);
+   $('state').textContent='Enregistré '+new Date().toLocaleTimeString('fr-FR');if(!quiet)toast('Rapport enregistré.');return r;
+  }).catch(function(e){toast(e.message,4000);throw e;});
+ }
+ function dataParams(){
+  readForm();
+  var p={level:R.niveau,periods:R.periodes,acts:R.activites,compare:R.comparaison};
+  if(R.niveau==='hopital')p.structure=R.structure;else p.zone=R.structure;
+  return p;
+ }
+ function buildParams(){
+  var p=JSON.parse(JSON.stringify(R.params||{}));
+  p.statut=R.statut;p.logo=R.logo||'';p.carte=R.carte||'';p.photo=R.photo||'';p.figures=(R.figures||[]).map(function(f){return {legende:f.legende,section:f.section,src:f.src};});
+  if(p.nomAffiche){p.nomZone=p.nomAffiche;p.nomHopital=p.nomAffiche;}
+  if(R.niveau==='hopital'&&R.structure&&!p.nomHopital)p.nomHopital=R.structure;
+  p.zone=R.niveau==='hopital'?'':R.structure;
+  return p;
+ }
+ function buildResult(){
+  if(!DATA)return null;
+  return R.niveau==='hopital'?RapportHosp.build(DATA,buildParams()):RapportZone.build(DATA,buildParams());
+ }
+ function refresh(manual){
+  if(busy)return Promise.resolve();
+  if(!R.structure&&!$('structure').value){toast('Choisissez d\'abord la structure.');return Promise.resolve();}
+  busy=true;$('state').textContent='Calcul à partir de la base…';
+  return api('reportData',{params:dataParams()}).then(function(d){
+   DATA=d;$('state').textContent='Données du '+new Date(d.generatedAt).toLocaleString('fr-FR');
+   drawProgress();drawPreview();if(manual)toast('Données actualisées : voir « Avancement » et « Aperçu ».');
+  }).catch(function(e){$('state').textContent='';toast(e.message,5000);}).then(function(){busy=false;});
+ }
+ function drawProgress(){
+  var d=DATA,h='';
+  if(d.level==='zone'){
+   var z=RapportZone.ctx(d,buildParams()),q=z.quota,n=z.n,tot=0,tgt=0;
+   z.fs.forEach(function(s){var u=(z.main.byStructure[s].usagers||{}).n||0;tot+=Math.min(u,q);tgt+=q;});
+   var pct=tgt?Math.round(tot/tgt*100):0;
+   h+='<div class="stat"><div><b>'+(n.usagers||0)+'</b>usagers</div><div><b>'+(n.personnels||0)+'</b>personnel</div><div><b>'+(n.cogecs||0)+'</b>COGECS</div><div><b>'+z.fs.length+'</b>centres</div><div><b>'+pct+' %</b>des '+q+' usagers par centre</div></div><div class="bar"><i style="width:'+pct+'%"></i></div>';
+   h+='<table class="pg"><tr><th>Centre de santé</th><th>Commune</th><th>Usagers / '+q+'</th><th>Personnel</th><th>COGECS</th><th>Score global</th></tr>';
+   z.fs.forEach(function(s){var g=z.main.byStructure[s],u=(g.usagers||{}).n||0;h+='<tr><td>'+esc(s)+'</td><td>'+esc(g.commune)+'</td><td class="'+(u>=q?'ok':'low')+'">'+u+'</td><td>'+((g.personnels||{}).n||0)+'</td><td>'+((g.cogecs||{}).n||0)+'</td><td>'+RapportBase.f1(g.combined)+'</td></tr>';});
+   h+='</table>';
+   if(!z.fs.length)h='<p class="hint">Aucune réponse trouvée pour ce périmètre (vérifiez la zone, les périodes ou les activités cochées).</p>';
+  }else{
+   h+='<div class="stat">'+['usagers','personnel','communaute'].map(function(k){return '<div><b>'+(d.cibles[k]?d.cibles[k].n:0)+'</b>'+({usagers:'usagers',personnel:'personnel',communaute:'communauté'})[k]+'</div>';}).join('')+'<div><b>'+RapportBase.f1(d.combined)+' %</b>score global provisoire</div></div>';
+   if(!(d.cibles.usagers.n+d.cibles.personnel.n+d.cibles.communaute.n))h='<p class="hint">Aucune réponse trouvée pour cet hôpital sur ce périmètre.</p>';
+  }
+  $('prog').innerHTML=h;
+ }
+ function drawPreview(){
+  var r=buildResult();if(!r)return;
+  $('pv').innerHTML='<p class="hint">'+r.model.nt+' tableaux, '+r.model.nf+' figures. L\'aperçu se met à jour à chaque actualisation.</p>'+RapportDoc.toHtml(r,true);
+ }
+ function fillRecos(){
+  if(!DATA){toast('Actualisez d\'abord les données.');return;}
+  var p=buildParams();p.recos=[];
+  var r=R.niveau==='hopital'?RapportHosp.recoList(DATA,p):RapportZone.recoList(RapportZone.ctx(DATA,p));
+  $('f-reco').value=r.join('\n');toast('Recommandations automatiques insérées : modifiez-les à votre guise.');
+ }
+ function importFiche(manual){
+  var n=$('niveau').value,s=$('structure').value;
+  var prev=list.filter(function(x){return x.niveau===n&&x.structure===s&&(!R||x.id!==R.id);}).sort(function(a,b){return a.modifie<b.modifie?1:-1;})[0];
+  if(!prev){if(manual)toast('Aucun rapport enregistré pour cette structure.');return;}
+  var p=prev.params||{},keys=['f-nom','f-pop','f-popc','f-sup','f-dep','f-quota','f-pub','f-priv','f-cons','f-cmd','f-pres','f-zs','f-cov','f-pz','f-ph'];
+  keys.forEach(function(k){if(manual||!$(k).value)$(k).value=p[FM[k]]||$(k).value;});
+  ['logo','carte','photo'].forEach(function(w){if(prev[w]&&(manual||!R[w]))R[w]=prev[w];});
+  updDens();renderImgs();
+  toast('Informations reprises du rapport « '+prev.titre+' ».');
+ }
+ function download(kind){
+  if(busy)return;
+  if(kind==='docx'&&!window.JSZip){toast('Bibliothèque Word non chargée : vérifiez la connexion Internet puis rechargez.',5000);return;}
+  if(kind==='pptx'&&!window.PptxGenJS){toast('Bibliothèque PowerPoint non chargée : vérifiez la connexion Internet puis rechargez.',5000);return;}
+  var b=$(kind==='docx'?'bDoc':'bPpt'),old=b.textContent;b.disabled=true;b.textContent='Préparation…';
+  saveReport(true).catch(function(){}).then(function(){return refresh(false);}).then(function(){
+   var r=buildResult();if(!r)throw new Error('Aucune donnée à exporter.');
+   return (kind==='docx'?RapportDoc.toDocx(r):RapportPpt.toPptx(r)).then(function(blob){
+    saveBlob(blob,(kind==='docx'?'Rapport_':'Presentation_')+slug(R.titre||R.structure)+(R.statut==='final'?'':'_provisoire')+'.'+kind);toast('Fichier généré.');
+   });
+  }).catch(function(e){toast(e.message||'Échec de la génération.',5000);}).then(function(){b.disabled=false;b.textContent=old;});
+ }
+</script>
+</body></html>

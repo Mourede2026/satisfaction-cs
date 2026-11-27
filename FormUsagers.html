@@ -278,86 +278,6 @@ function applyGeolocationIfAvailable(){
   currentAnswers['_start-geopoint_precision'] = pos.coords.accuracy || '';
 }
 
-
-/* ---------- Enregistrement audio obligatoire (entretien) ----------
-   Démarre automatiquement à l'ouverture, avec une mention visible et permanente à l'écran.
-   Si le micro est refusé ou indisponible, la saisie est bloquée (le formulaire l'exige). */
-const AREC = { stream: null, rec: null, chunks: [], startedAt: null, mime: '' };
-let arecTickTimer = null, arecRequesting = false;
-function arecBanner(){
-  let b = document.getElementById('arecBanner');
-  if (!b){
-    b = document.createElement('div'); b.id = 'arecBanner';
-    b.style.cssText = 'position:sticky;top:0;z-index:20;background:#c0392b;color:#fff;text-align:center;padding:10px 12px;font-size:.85rem;font-weight:600';
-    document.body.insertBefore(b, document.body.firstChild);
-  }
-  return b;
-}
-function arecTick(){
-  const b = document.getElementById('arecBanner'); if (!b || !AREC.startedAt || AREC.blocked) return;
-  const s = Math.floor((Date.now() - AREC.startedAt) / 1000), m = String(Math.floor(s/60)).padStart(2,'0'), ss = String(s%60).padStart(2,'0');
-  b.textContent = '🔴 Enregistrement audio en cours — ' + m + ':' + ss + ' (obligatoire pour cette enquête)';
-}
-function arecBlock(msg){
-  AREC.blocked = true;
-  const b = arecBanner(); b.style.background = '#7a1f1f'; b.innerHTML = '';
-  const p = document.createElement('div'); p.textContent = '⛔ ' + msg; p.style.marginBottom = '8px';
-  const hint = document.createElement('div'); hint.style.cssText = 'font-size:.78rem;font-weight:400;opacity:.9;margin-bottom:8px';
-  hint.textContent = "Astuce : touchez l'icône (ⓘ ou 🔒) à côté de l'adresse du site, activez le micro, puis appuyez sur Réessayer.";
-  const btn = document.createElement('button'); btn.textContent = '🔄 Réessayer';
-  btn.style.cssText = 'background:#fff;color:#7a1f1f;border:none;border-radius:8px;padding:8px 18px;font-weight:700;font-size:.85rem;cursor:pointer';
-  btn.onclick = () => startAudioRecording();
-  b.appendChild(p); b.appendChild(hint); b.appendChild(btn);
-  const main = document.querySelector('main'); if (main) main.style.display = 'none';
-}
-function arecUnblock(){
-  AREC.blocked = false;
-  const b = document.getElementById('arecBanner'); if (b){ b.style.background = '#c0392b'; b.innerHTML = ''; }
-  const main = document.querySelector('main'); if (main) main.style.display = '';
-}
-function startAudioRecording(){
-  if (arecRequesting || (AREC.rec && AREC.rec.state === 'recording')) return;
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined'){
-    arecBlock("Micro non disponible sur cet appareil/navigateur. Ce formulaire nécessite l'enregistrement audio."); return;
-  }
-  arecRequesting = true;
-  navigator.mediaDevices.getUserMedia({ audio: true, video: false }).then(stream => {
-    arecRequesting = false;
-    AREC.stream = stream;
-    const opts = {};
-    ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'].some(t => {
-      if (window.MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)){ opts.mimeType = t; return true; } return false;
-    });
-    try { AREC.rec = new MediaRecorder(stream, opts); } catch(e){ AREC.rec = new MediaRecorder(stream); }
-    AREC.mime = AREC.rec.mimeType || 'audio/webm'; AREC.chunks = [];
-    AREC.rec.ondataavailable = e => { if (e.data && e.data.size) AREC.chunks.push(e.data); };
-    AREC.rec.start(1000); AREC.startedAt = Date.now();
-    arecUnblock(); arecTick();
-    if (arecTickTimer) clearInterval(arecTickTimer);
-    arecTickTimer = setInterval(arecTick, 1000);
-  }).catch(() => {
-    arecRequesting = false;
-    arecBlock("L'accès au micro a été refusé ou est bloqué. Autorisez le micro pour ce site dans les paramètres du navigateur, puis appuyez sur Réessayer (ou rechargez la page si rien ne change).");
-  });
-}
-function arecStopAndGet(){
-  return new Promise(resolve => {
-    if (!AREC.rec || AREC.rec.state === 'inactive'){ resolve(null); return; }
-    AREC.rec.onstop = () => {
-      const blob = new Blob(AREC.chunks, { type: AREC.mime }), durSec = AREC.startedAt ? Math.round((Date.now() - AREC.startedAt) / 1000) : 0;
-      const reader = new FileReader();
-      reader.onloadend = () => resolve({ b64: (String(reader.result).split(',')[1] || ''), mime: AREC.mime, dur: durSec });
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(blob);
-    };
-    try { AREC.rec.stop(); } catch(e){ resolve(null); }
-  });
-}
-function arecRestart(){
-  AREC.chunks = []; AREC.startedAt = Date.now();
-  if (AREC.rec && AREC.rec.state === 'inactive'){ try { AREC.rec.start(1000); } catch(e){} }
-}
-
 function onSubmit(){
   document.getElementById('errorMsg').style.display='none';
   if (!validate()){
@@ -369,12 +289,8 @@ function onSubmit(){
   btn.disabled = true; btn.textContent = 'Enregistrement...';
   applyGeolocationIfAvailable(); // instantané : n'attend jamais le GPS
   const payload = buildPayload();
-  arecStopAndGet().then(audio => {
-    if (audio){ payload._audio_b64 = audio.b64; payload._audio_mime = audio.mime; payload._audio_dur = audio.dur; }
-    arecRestart(); // reprend l'enregistrement tout de suite, sans attendre l'envoi réseau
-    sendOrQueue(payload, ()=>{
-      btn.disabled = false; btn.textContent = '✅ Enregistrer la réponse';
-    });
+  sendOrQueue(payload, ()=>{
+    btn.disabled = false; btn.textContent = '✅ Enregistrer la réponse';
   });
 }
 
@@ -397,13 +313,7 @@ function queueSubmission(payload){
   if (!payload._cid) payload._cid = newCid();
   const q = readQueue();
   if (!q.some(x => x._cid === payload._cid)) q.push(payload);
-  try { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); }
-  catch(e){
-    // Mémoire locale insuffisante (audio volumineux) : on garde la réponse sans l'audio.
-    if (payload._audio_b64){ delete payload._audio_b64; delete payload._audio_mime; delete payload._audio_dur; }
-    try { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); showToast("⚠️ Mémoire insuffisante : l'audio de cette réponse n'a pas pu être sauvegardé hors connexion."); }
-    catch(e2){ showToast('⚠️ Erreur de sauvegarde locale.'); }
-  }
+  localStorage.setItem(QUEUE_KEY, JSON.stringify(q));
   updateQueueBadge();
 }
 
@@ -468,7 +378,6 @@ render();
 updateQueueBadge();
 syncQueue(false);
 startBackgroundGeolocation();
-startAudioRecording();
 </script>
 </body>
 </html>

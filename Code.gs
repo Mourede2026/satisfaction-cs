@@ -42,13 +42,9 @@ function doPost(e) {
         if (en) { d[ENQ_ID_COL] = en.id; d[ENQ_NUM_COL] = en.numero; d["Identification de l'enquêteur"] = en.prenom; d['Enqueteur'] = en.prenom; }
       }
     }
+    // L'enregistrement audio a été retiré : un ancien formulaire encore en cache peut envoyer un audio, qui est ignoré (jamais stocké).
+    delete d._audio_b64; delete d._audio_mime; delete d._audio_dur;
     if (isSubmit && dejaRecu_(cid)) return json_({ ok: true, duplicate: true });
-    // Enregistrement audio obligatoire (Usagers, Usagers Hôpital, COGECS, Communauté) : stocké à part dans Google Sheets, par morceaux.
-    var audioB64 = d._audio_b64, audioMime = d._audio_mime; delete d._audio_b64; delete d._audio_mime; delete d._audio_dur;
-    if (isSubmit && audioB64 && FORM_KEY_[action]) {
-      try { saveAudioChunks_(cid, FORM_KEY_[action], audioMime, audioB64); d[AUDIO_COL] = cid || 'Oui'; }
-      catch (audioErr) { d[AUDIO_COL] = 'Erreur enregistrement audio : ' + audioErr.message; }
-    }
     if (action === "submitUsagers") out = appendRecord_(SHEET_USAGERS, d);
     else if (action === "submitPersonnels") out = appendRecord_(SHEET_PERSONNELS, d);
     else if (action === "submitCogecs") out = appendRecord_(SHEET_COGECS, d);
@@ -89,6 +85,11 @@ function doPost(e) {
     else if (action === "setActivityActive") out = handleSetActivityActive(d.token, d.id, d.active);
     else if (action === "deleteActivity") out = handleDeleteActivity(d.token, d.id);
     else if (action === "getDashboardData") out = getDashboardData(d.token, d.filter);
+    else if (action === "reportOptions") out = repOptions_(d.token);
+    else if (action === "reportData") out = repData_(d.token, d.params);
+    else if (action === "reportList") out = repList_(d.token);
+    else if (action === "reportSave") out = repSave_(d.token, d.report);
+    else if (action === "reportDelete") out = repDelete_(d.token, d.id);
     else if (action === "listPeriods") out = handleListPeriods(d.token);
     else if (action === "savePeriod") out = handleSavePeriod(d.token, d.period);
     else if (action === "deletePeriod") out = handleDeletePeriod(d.token, d.id);
@@ -135,7 +136,6 @@ function appendRecord_(sheetName, data, keyColumnName) {
     var cols_ = [DATE_COLUMN]; if (data[ACT_COL]) cols_.push(ACT_COL, ACT_ID_COL); if (data[ENQ_ID_COL]) cols_.push(ENQ_ID_COL, ENQ_NUM_COL);
     if (data._t_start || data.start || data.end) cols_.push(START_COL, END_COL);
     if (data._dev) cols_.push(DEV_COL);
-    if (data[AUDIO_COL]) cols_.push(AUDIO_COL);
     cols_.forEach(function (nm) {
       if (hm.map[nm]) return;
       sheet.getRange(1, hm.lastCol + 1).setValue(nm);
@@ -160,24 +160,6 @@ function dejaRecu_(cid) {
   return !!sh.getRange(2, 1, sh.getLastRow() - 1, 1).createTextFinder(String(cid)).matchEntireCell(true).findNext();
 }
 function noterRecu_(cid) { if (cid) getOrCreateSheet_(ENVOIS_SHEET_NAME, ['cid', 'date']).appendRow([String(cid), new Date().toISOString()]); }
-
-/* ---------- Audio d'entretien (obligatoire, enregistré avec mention visible côté enquêteur) ----------
-   Stocké en morceaux de texte dans Google Sheets (pas de Drive) : une feuille dédiée, plusieurs lignes
-   par enregistrement. Reconstitution : trier par (cid, partie) et concaténer la colonne "contenu". */
-function saveAudioChunks_(cid, formKey, mime, b64) {
-  if (!cid || !b64) return;
-  var CH = 45000; // marge sous la limite ~50000 caractères par cellule Google Sheets
-  var total = Math.ceil(b64.length / CH);
-  var date = new Date().toISOString(), rows = [];
-  for (var i = 0; i < total; i++) rows.push([String(cid), formKey || '', date, mime || '', i + 1, total, b64.substr(i * CH, CH)]);
-  var sh = getOrCreateSheet_(AUDIO_SHEET_NAME, ['cid', 'formulaire', 'date', 'mime', 'partie', 'total', 'contenu']);
-  var lock = LockService.getScriptLock(); lock.waitLock(30000);
-  try {
-    var startRow = sh.getLastRow() + 1;
-    sh.getRange(startRow, 1, rows.length, rows[0].length).setValues(rows);
-    SpreadsheetApp.flush();
-  } finally { lock.releaseLock(); }
-}
 
 /* ---------- Enquêtes hôpitaux (collecte uniquement) ---------- */
 var SHEET_USAGERS_H = "🏥 USAGERS_HOPITAL", SHEET_PERSONNELS_H = "🏥 PERSONNEL_HOPITAL", SHEET_COMMUNAUTE_H = "🏥 COMMUNAUTE_HOPITAL";
@@ -748,7 +730,6 @@ function handleDeleteAccessCode(token, level, name) {
 }
 
 /* ---------- Activités : un code QR par activité ---------- */
-var AUDIO_COL = 'Audio', AUDIO_SHEET_NAME = '🎙️ Audios';
 var ACT_SHEET_NAME = 'Activites', ACT_COL = 'Activité', ACT_ID_COL = 'IdActivité';
 var ACT_HEADERS = ['ID', 'Activité', 'Niveau', 'Cible', 'Formulaires', 'Communes', 'Début', 'Fin', 'Code', 'Actif', 'Créée le'];
 var ACT_FORMS = { zone: ['usagers', 'cogecs'], hopital: ['usagers', 'communaute'] };
@@ -1865,5 +1846,292 @@ function handleSetSupervisorPassword(token, username, password) {
   var f = findAccountRow_(username); if (!f || (String(f.data[2]) !== SUP_LEVEL && String(f.data[2]) !== COMPTA_LEVEL)) return { ok: false, error: 'Compte introuvable.' };
   var sh = accountsSheet_(); sh.getRange(f.row, 2).setValue(sha256Hex_(String(f.data[0]).trim() + ':' + password)); setPlainPwd_(f.row, password); sh.getRange(f.row, 8).setValue(new Date().toISOString());
   invalidateSessionsForUser_(String(f.data[0]).trim());
+  return { ok: true };
+}
+
+/* ---------- Rapports et présentations (v28) : réservé au compte administrateur ---------- */
+// Les rapports Word et PowerPoint se construisent dans le navigateur de l'administrateur à partir de ces données.
+// Rien n'est publié : seul le niveau « admin » peut lire les données de rapport, les brouillons et les paramètres saisis.
+var RAP_SHEET = 'Rapports', RAP_HEADERS = ['Id', 'Titre', 'Niveau', 'Structure', 'Périodes', 'Activités', 'Comparaison', 'Paramètres', 'Statut', 'ModifiéLe', 'Logo', 'Carte', 'Photo'];
+var RAPF_SHEET = 'RapportFigures', RAPF_HEADERS = ['RapportId', 'Rang', 'Legende', 'Section', 'Data'];
+function repFigLoad_() {
+  var v = getOrCreateSheet_(RAPF_SHEET, RAPF_HEADERS).getDataRange().getValues(), o = {};
+  for (var i = 1; i < v.length; i++) { var id = String(v[i][0]); if (!id) continue; (o[id] = o[id] || []).push({ rang: Number(v[i][1]) || 0, legende: String(v[i][2] || ''), section: String(v[i][3] || 'cadre'), src: String(v[i][4] || '') }); }
+  Object.keys(o).forEach(function (k) { o[k].sort(function (a, b) { return a.rang - b.rang; }); });
+  return o;
+}
+function repFigSave_(id, figs) {
+  var sh = getOrCreateSheet_(RAPF_SHEET, RAPF_HEADERS), v = sh.getDataRange().getValues();
+  for (var i = v.length - 1; i >= 1; i--) if (String(v[i][0]) === String(id)) sh.deleteRow(i + 1);
+  (figs || []).slice(0, 4).forEach(function (f, k) { sh.appendRow([id, k + 1, String(f.legende || '').slice(0, 200), ['cadre', 'methodes', 'resultats', 'annexes'].indexOf(f.section) >= 0 ? f.section : 'cadre', String(f.src || '')]); });
+}
+var REP_CIBLES = [
+  { key: 'usagers', sheet: SHEET_USAGERS, t: T_USAGERS, cats: CATEGORY_MAP.usagers },
+  { key: 'personnels', sheet: SHEET_PERSONNELS, t: T_PERSONNELS, cats: CATEGORY_MAP.personnels },
+  { key: 'cogecs', sheet: SHEET_COGECS, t: T_COGECS, cats: CATEGORY_MAP.cogecs }
+];
+function repRound1_(x) { return typeof x === 'number' && isFinite(x) ? Math.round(x * 10) / 10 : null; }
+function repPc_(x) { return typeof x === 'number' && isFinite(x) ? Math.round(x * 1000) / 10 : null; }
+function repMean_(a) { var s = 0, n = 0; a.forEach(function (v) { if (typeof v === 'number') { s += v; n++; } }); return n ? s / n : null; }
+function repCount_(arr) { var o = {}; arr.forEach(function (v) { v = String(v === undefined || v === null ? '' : v).trim(); if (v) o[v] = (o[v] || 0) + 1; }); return o; }
+function repAgeBucket_(a) { a = Number(a); if (!isFinite(a) || a <= 0) return ''; return a < 25 ? 'Moins de 25 ans' : a <= 50 ? 'Entre 25 et 50 ans' : 'Plus de 50 ans'; }
+/** Filtre : périodes (union de plages de dates) ET activités (colonne IdActivité). Aucun des deux = toutes les réponses. */
+function repFilter_(ids, acts) {
+  var all = periodsList_(), rg = [];
+  (ids || []).forEach(function (id) { all.forEach(function (q) { if (q.id === String(id)) rg.push(q); }); });
+  return { ranges: rg, acts: (acts || []).map(String) };
+}
+function repKeep_(f, day, actId) {
+  if (f.acts.length && f.acts.indexOf(String(actId || '')) < 0) return false;
+  if (f.ranges.length) { var ok = false; f.ranges.forEach(function (r) { if (day && day >= r.start && day <= r.end) ok = true; }); if (!ok) return false; }
+  return true;
+}
+function repOptions_(token) {
+  var c = requireAdminSession_(token); if (!c.ok) return c;
+  var ref = referentiel_(), zones = {}, communes = {};
+  Object.keys(ref).forEach(function (k) { var z = ref[k].zone || ''; if (z) { (zones[z] = zones[z] || []).push(k); } communes[k] = z; });
+  var hosp = {};
+  try {
+    var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_USAGERS_H);
+    if (sh && sh.getLastRow() >= 2) { var hm = buildHeaderMap_(sh).map; readColumn_(sh, hm, 'fs').forEach(function (h) { h = String(h || '').trim(); if (h) hosp[h] = (hosp[h] || 0) + 1; }); }
+  } catch (e) {}
+  return { ok: true, periods: periodsList_(), activities: activitiesRows_().map(function (a) { return { id: a.id, name: a.name, level: a.level, debut: a.debut, fin: a.fin }; }),
+    zones: Object.keys(zones).sort().map(function (z) { return { name: z, communes: zones[z].sort() }; }), hospitals: Object.keys(hosp).sort() };
+}
+/** Chargement des lignes des 3 cibles « zone sanitaire » : une ligne = un questionnaire avec ses scores par domaine (0 à 1). */
+function repLoadZone_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), out = {};
+  REP_CIBLES.forEach(function (d) {
+    var o = { names: d.cats.map(function (c) { return c.name; }), rows: [] }; out[d.key] = o;
+    var sh = ss.getSheetByName(d.sheet), t = ss.getSheetByName(d.t);
+    if (!sh || !t || sh.getLastRow() < 2) return;
+    var hm = buildHeaderMap_(sh).map, rc = function (h) { return readColumn_(sh, hm, h); };
+    var com = rc('Commune'), str = rc('Structure'), days = rowDays_(sh, hm), act = rc(ACT_ID_COL), age = rc('Âge'), sex = rc('Sexe'), sco = rc('Niveau de scolarité'), pro = rc('Profession'), ver = rc('Verbatims');
+    var cs = computeCategoryScores_(t, d.cats, com.length);
+    for (var i = 0; i < com.length; i++) {
+      var c = String(com[i] || '').trim(); if (!c) continue;
+      var dd = {}; o.names.forEach(function (n) { dd[n] = cs[n] ? cs[n][i] : null; });
+      o.rows.push({ com: c, str: String(str[i] || '').trim(), day: days[i] || '', act: String(act[i] || ''), age: age[i], sex: String(sex[i] || '').trim(), sco: String(sco[i] || '').trim(), pro: String(pro[i] || '').trim(), ver: String(ver[i] || '').trim(), d: dd });
+    }
+  });
+  return out;
+}
+/** Agrégats par formation sanitaire, commune et zone (domaine = moyenne des questionnaires ; commune = moyenne des formations ; zone = moyenne des communes). */
+function repSummarizeZone_(data, f, communes) {
+  var res = { n: {}, communes: [], byCommune: {}, byStructure: {}, zone: {} };
+  var sel = {};
+  REP_CIBLES.forEach(function (d) {
+    var names = data[d.key].names;
+    sel[d.key] = data[d.key].rows.filter(function (r) { return (!communes || !communes.length || communes.indexOf(r.com) >= 0) && repKeep_(f, r.day, r.act); });
+    res.n[d.key] = sel[d.key].length;
+  });
+  var comSet = {};
+  REP_CIBLES.forEach(function (d) { sel[d.key].forEach(function (r) { comSet[r.com] = 1; }); });
+  res.communes = Object.keys(comSet).sort();
+  function groupScores(rows, names) {
+    var d = {}; names.forEach(function (n) { d[n] = repMean_(rows.map(function (r) { return r.d[n]; })); });
+    var o = repMean_(names.map(function (n) { return d[n]; }));
+    return { n: rows.length, d: d, o: o };
+  }
+  REP_CIBLES.forEach(function (d) {
+    var names = data[d.key].names, byFs = {};
+    sel[d.key].forEach(function (r) { var k = r.com + '||' + (r.str || '(non renseignée)'); (byFs[k] = byFs[k] || []).push(r); });
+    Object.keys(byFs).forEach(function (k) {
+      var p = k.split('||'), g = groupScores(byFs[k], names);
+      var s = res.byStructure[p[1]] = res.byStructure[p[1]] || { commune: p[0] };
+      s[d.key] = g;
+    });
+    res.communes.forEach(function (c) {
+      var fsList = Object.keys(res.byStructure).filter(function (s) { return res.byStructure[s].commune === c && res.byStructure[s][d.key]; });
+      var dd = {}; names.forEach(function (n) { dd[n] = repMean_(fsList.map(function (s) { return res.byStructure[s][d.key].d[n]; })); });
+      var cm = res.byCommune[c] = res.byCommune[c] || {};
+      cm[d.key] = { n: sel[d.key].filter(function (r) { return r.com === c; }).length, nFs: fsList.length, d: dd, o: repMean_(names.map(function (n) { return dd[n]; })) };
+    });
+    var zd = {}; names.forEach(function (n) { zd[n] = repMean_(res.communes.map(function (c) { return res.byCommune[c][d.key] ? res.byCommune[c][d.key].d[n] : null; })); });
+    res.zone[d.key] = { n: sel[d.key].length, d: zd, o: repMean_(names.map(function (n) { return zd[n]; })) };
+  });
+  var keys = REP_CIBLES.map(function (d) { return d.key; });
+  res.communes.forEach(function (c) { res.byCommune[c].combined = repMean_(keys.map(function (k) { return res.byCommune[c][k] ? res.byCommune[c][k].o : null; })); });
+  res.zone.combined = repMean_(keys.map(function (k) { return res.zone[k] ? res.zone[k].o : null; }));
+  Object.keys(res.byStructure).forEach(function (s) { res.byStructure[s].combined = repMean_(keys.map(function (k) { return res.byStructure[s][k] ? res.byStructure[s][k].o : null; })); });
+  res._sel = sel;
+  return res;
+}
+function repRound_(o) {   // arrondit tous les scores (0..1) en pourcentages à une décimale
+  if (o === null || o === undefined) return o;
+  if (typeof o === 'number') return o;
+  if (Array.isArray(o)) return o.map(repRound_);
+  if (typeof o === 'object') { var r = {}; Object.keys(o).forEach(function (k) { r[k] = repRound_(o[k]); }); return r; }
+  return o;
+}
+function repPct_(o) {     // convertit les champs d (domaines), o et combined de 0..1 vers 0..100
+  if (!o || typeof o !== 'object') return o;
+  Object.keys(o).forEach(function (k) {
+    var v = o[k];
+    if ((k === 'o' || k === 'combined') && typeof v === 'number') o[k] = repRound1_(v * 100);
+    else if (k === 'd' && v) Object.keys(v).forEach(function (n) { v[n] = typeof v[n] === 'number' ? repRound1_(v[n] * 100) : null; });
+    else if (v && typeof v === 'object' && k !== '_sel') repPct_(v);
+  });
+  return o;
+}
+function repDemoZone_(sel, communes) {
+  var out = { usagers: {}, personnels: {}, cogecs: {} };
+  communes.forEach(function (c) {
+    var u = sel.usagers.filter(function (r) { return r.com === c; }), p = sel.personnels.filter(function (r) { return r.com === c; }), g = sel.cogecs.filter(function (r) { return r.com === c; });
+    out.usagers[c] = { n: u.length, ageMoy: repRound1_(repMean_(u.map(function (r) { return Number(r.age) > 0 ? Number(r.age) : null; }))), age: repCount_(u.map(function (r) { return repAgeBucket_(r.age); })), sexe: repCount_(u.map(function (r) { return r.sex; })), scolarite: repCount_(u.map(function (r) { return r.sco; })), profession: repCount_(u.map(function (r) { return r.pro; })) };
+    out.personnels[c] = { n: p.length, ageMoy: repRound1_(repMean_(p.map(function (r) { return Number(r.age) > 0 ? Number(r.age) : null; }))), age: repCount_(p.map(function (r) { return repAgeBucket_(r.age); })), sexe: repCount_(p.map(function (r) { return r.sex; })), scolarite: repCount_(p.map(function (r) { return r.sco; })) };
+    out.cogecs[c] = { n: g.length, ageMoy: repRound1_(repMean_(g.map(function (r) { return Number(r.age) > 0 ? Number(r.age) : null; }))) };
+  });
+  return out;
+}
+function repVerbatims_(sel) {
+  var out = [], seen = {};
+  sel.usagers.forEach(function (r) { var v = r.ver; if (v && v.length > 3 && !seen[v.toLowerCase()]) { seen[v.toLowerCase()] = 1; out.push({ commune: r.com, structure: r.str, texte: v.slice(0, 300) }); } });
+  return out.slice(0, 80);
+}
+function repZone_(p) {
+  var data = repLoadZone_(), ref = referentiel_(), communes = [];
+  if (p.zone) Object.keys(ref).forEach(function (k) { if (ref[k].zone === p.zone) communes.push(k); });
+  if (p.communes && p.communes.length) communes = p.communes;
+  var f = repFilter_(p.periods, p.acts), main = repSummarizeZone_(data, f, communes), sel = main._sel;
+  var demo = repDemoZone_(sel, main.communes), verb = repVerbatims_(sel);
+  var byPeriod = [];
+  if (f.ranges.length > 1) f.ranges.forEach(function (r) {
+    var s = repSummarizeZone_(data, { ranges: [r], acts: f.acts }, communes); delete s._sel;
+    byPeriod.push({ id: r.id, label: r.label, start: r.start, end: r.end, sum: repPct_(s) });
+  });
+  var cmp = null;
+  if (p.compare && p.compare.length) {
+    var f2 = repFilter_(p.compare, []), s2 = repSummarizeZone_(data, f2, communes); delete s2._sel;
+    cmp = { labels: f2.ranges.map(function (r) { return r.label; }), sum: repPct_(s2) };
+  }
+  delete main._sel; repPct_(main);
+  var domains = {}; REP_CIBLES.forEach(function (d) { domains[d.key] = data[d.key].names; });
+  return { level: 'zone', zone: p.zone || '', communes: main.communes, domains: domains, main: main, demo: demo, verbatims: verb, byPeriod: byPeriod, compare: cmp,
+    periodLabels: f.ranges.map(function (r) { return r.label; }), start: f.ranges.length ? f.ranges.map(function (r) { return r.start; }).sort()[0] : '', end: f.ranges.length ? f.ranges.map(function (r) { return r.end; }).sort().pop() : '' };
+}
+/** Hôpital : score par rubrique et par question, usagers (hospitalisés / ambulatoires), personnel, communauté. */
+function repLoadHosp_(key, hospName) {
+  var cfg = HOSP_CFG[key], ss = SpreadsheetApp.getActiveSpreadsheet(), sh = ss.getSheetByName(cfg.sheet), rows = [], texts = {};
+  if (!sh || sh.getLastRow() < 2) return { rows: rows, texts: texts };
+  var v = sh.getDataRange().getValues(), ci = {};
+  v[0].forEach(function (h, i) { var t = String(h || '').trim(); if (t && ci[t] === undefined) ci[t] = i; });
+  var iH = ci[cfg.hosp]; if (iH === undefined) return { rows: rows, texts: texts };
+  var i1 = ci[DATE_COLUMN], i2 = ci['today'], i3 = ci['start'], iA = ci[ACT_ID_COL], want = strip_(hospName);
+  var textCols = ['I4', 'I5'].filter(function (h) { return ci[h] !== undefined; }).concat(Object.keys(ci).filter(function (h) { return /pas_aim|recommand|am_lior|suggest|Qu_est_ce|plainte|Ce_que/i.test(h) && h !== 'I4' && h !== 'I5'; }));
+  function g(row, name) { var k = ci[name]; return k === undefined || row[k] === null || row[k] === undefined ? '' : String(row[k]).trim(); }
+  for (var r = 1; r < v.length; r++) {
+    var row = v[r]; if (strip_(row[iH]) !== want) continue;
+    var cs = {}, it = {};
+    cfg.cats.forEach(function (cat) {
+      var s = 0, n = 0;
+      cat.items.forEach(function (x) {
+        var k = ci[x.c]; if (k === undefined) return;
+        var lab = String(row[k] === undefined || row[k] === null ? '' : row[k]).trim(), m = HOSP_SCALES[x.l];
+        if (!lab || !m || m[lab] === undefined) return;
+        var sc = m[lab]; if (x.i) sc = 1 - sc;
+        it[x.c] = sc; s += sc; n++;
+      });
+      cs[cat.n] = n > 0 ? s / n : null;
+    });
+    var day = (i1 !== undefined ? day_(row[i1]) : '') || (i2 !== undefined ? day_(row[i2]) : '') || (i3 !== undefined ? day_(row[i3]) : '');
+    var oth = {}; ['AA1', 'AA2', 'AA3', 'AA4', 'I1', 'I2'].forEach(function (n) { oth[n] = g(row, n); }); oth.raison = g(row, 'Raison_Choix') || g(row, 'Si_vous_devrez_reven_s_motivants_ce_choix');
+    rows.push({ day: day, act: iA !== undefined ? String(row[iA] || '') : '', cs: cs, it: it, oth: oth, hosp: g(row, 'Hospitalisation'), age: g(row, 'Age') || g(row, 'age'), sex: g(row, 'Sexe'), pro: g(row, 'Profession'), ins: g(row, 'Instruction'), com: g(row, 'commune'), suj: g(row, 'Sujet_enqu_t'),
+      tx: textCols.map(function (h) { return [h, g(row, h)]; }).filter(function (x) { return x[1].length > 3; }) });
+  }
+  return { rows: rows, texts: texts };
+}
+function repSummarizeHosp_(key, rows, f) {
+  var cfg = HOSP_CFG[key], sel = rows.filter(function (r) { return repKeep_(f, r.day, r.act); });
+  function agg(list) {
+    var cats = {}, items = {};
+    cfg.cats.forEach(function (cat) {
+      cats[cat.n] = repPc_(repMean_(list.map(function (r) { return r.cs[cat.n]; })));
+      items[cat.n] = cat.items.map(function (x) { var a = list.map(function (r) { return typeof r.it[x.c] === 'number' ? r.it[x.c] : null; }).filter(function (z) { return z !== null; }); return { c: x.c, n: a.length, s: a.length ? repPc_(repMean_(a)) : null }; });
+    });
+    var o = repRound1_(repMean_(cfg.cats.map(function (c) { return cats[c.n] === null ? null : cats[c.n]; })));
+    return { n: list.length, cats: cats, items: items, o: o };
+  }
+  var out = { n: sel.length, all: agg(sel) };
+  if (key === 'usagers') {
+    var oui = sel.filter(function (r) { return strip_(r.hosp) === 'oui'; }), non = sel.filter(function (r) { return strip_(r.hosp) === 'non'; });
+    out.hospitalise = agg(oui); out.ambulatoire = agg(non);
+  }
+  function demoOf(list) {
+    return { n: list.length, ageMoy: repRound1_(repMean_(list.map(function (r) { return Number(r.age) > 0 ? Number(r.age) : null; }))), age: repCount_(list.map(function (r) { return repAgeBucket_(r.age); })), sexe: repCount_(list.map(function (r) { return r.sex; })),
+      profession: repCount_(list.map(function (r) { return r.pro; })), instruction: repCount_(list.map(function (r) { return r.ins; })), provenance: repCount_(list.map(function (r) { return r.com; })), sujet: repCount_(list.map(function (r) { return r.suj; })), hospitalisation: repCount_(list.map(function (r) { return r.hosp; })) };
+  }
+  out.demo = demoOf(sel);
+  if (key === 'usagers') {
+    out.demoHosp = demoOf(sel.filter(function (r) { return strip_(r.hosp) === 'oui'; })); out.demoAmb = demoOf(sel.filter(function (r) { return strip_(r.hosp) === 'non'; }));
+    out.autres = {}; ['AA1', 'AA2', 'AA3', 'AA4', 'I1', 'I2'].forEach(function (n) { out.autres[n] = repCount_(sel.map(function (r) { return r.oth[n]; })); });
+  }
+  var RL = ['Réputation', 'Proximité', 'Coût / Tarifs pratiqués', 'Recommandation / relation', 'Cas référé'], rs = {};
+  RL.forEach(function (l) { rs[l] = sel.filter(function (r) { return strip_(r.oth.raison).indexOf(strip_(l)) >= 0; }).length; });
+  out.raisons = rs;
+  var tx = {}; sel.forEach(function (r) { r.tx.forEach(function (x) { (tx[x[0]] = tx[x[0]] || []).push(x[1].slice(0, 200)); }); });
+  Object.keys(tx).forEach(function (k) { tx[k] = tx[k].slice(0, 40); });
+  out.texts = tx;
+  return out;
+}
+function repHospital_(p) {
+  var f = repFilter_(p.periods, p.acts), res = { level: 'hopital', hopital: p.structure || '', cibles: {}, byPeriod: [], compare: null }, all = {};
+  HOSP_KEYS.forEach(function (k) { all[k] = repLoadHosp_(k, p.structure || ''); res.cibles[k] = repSummarizeHosp_(k, all[k].rows, f); res.cibles[k].cats = HOSP_CFG[k].cats.map(function (c) { return c.n; }); });
+  var kk = HOSP_KEYS;
+  function combined(s) { return repRound1_(repMean_(kk.map(function (k) { return s[k] && s[k].all ? s[k].all.o : null; }))); }
+  res.combined = combined(res.cibles);
+  if (f.ranges.length > 1) f.ranges.forEach(function (r) {
+    var fr = { ranges: [r], acts: f.acts }, s = {}; kk.forEach(function (k) { var x = repSummarizeHosp_(k, all[k].rows, fr); s[k] = { n: x.n, o: x.all.o, cats: x.all.cats, hospitalise: x.hospitalise ? x.hospitalise.o : null, ambulatoire: x.ambulatoire ? x.ambulatoire.o : null }; });
+    res.byPeriod.push({ id: r.id, label: r.label, start: r.start, end: r.end, cibles: s, combined: repRound1_(repMean_(kk.map(function (k) { return s[k].o; }))) });
+  });
+  if (p.compare && p.compare.length) {
+    var f2 = repFilter_(p.compare, []), s2 = {}; kk.forEach(function (k) { var x = repSummarizeHosp_(k, all[k].rows, f2); s2[k] = { n: x.n, o: x.all.o, cats: x.all.cats, hospitalise: x.hospitalise ? x.hospitalise.o : null, ambulatoire: x.ambulatoire ? x.ambulatoire.o : null }; });
+    res.compare = { labels: f2.ranges.map(function (r) { return r.label; }), cibles: s2, combined: repRound1_(repMean_(kk.map(function (k) { return s2[k].o; }))) };
+  }
+  res.periodLabels = f.ranges.map(function (r) { return r.label; });
+  res.start = f.ranges.length ? f.ranges.map(function (r) { return r.start; }).sort()[0] : ''; res.end = f.ranges.length ? f.ranges.map(function (r) { return r.end; }).sort().pop() : '';
+  return res;
+}
+function repData_(token, p) {
+  var c = requireAdminSession_(token); if (!c.ok) return c;
+  p = p || {};
+  try {
+    var out = p.level === 'hopital' ? repHospital_(p) : repZone_(p);
+    out.ok = true; out.generatedAt = new Date().toISOString(); return out;
+  } catch (e) { return { ok: false, error: 'Calcul du rapport impossible : ' + e.message }; }
+}
+function repSheet_() { return getOrCreateSheet_(RAP_SHEET, RAP_HEADERS); }
+function repRowView_(v) { var o = {}; try { o = JSON.parse(String(v[7] || '{}')); } catch (e) {} return { id: String(v[0]), titre: String(v[1]), niveau: String(v[2]), structure: String(v[3]), periodes: csvList_(v[4]), activites: csvList_(v[5]), comparaison: csvList_(v[6]), params: o, statut: String(v[8] || 'brouillon'), modifie: String(v[9] || ''), logo: String(v[10] || ''), carte: String(v[11] || ''), photo: String(v[12] || '') }; }
+function repList_(token) {
+  var c = requireAdminSession_(token); if (!c.ok) return c;
+  var sh = repSheet_(), v = sh.getDataRange().getValues(), out = [];
+  var fg = repFigLoad_();
+  for (var i = 1; i < v.length; i++) if (v[i][0]) { var rv = repRowView_(v[i]); rv.figures = fg[rv.id] || []; out.push(rv); }
+  out.sort(function (a, b) { return a.modifie < b.modifie ? 1 : -1; });
+  return { ok: true, rapports: out };
+}
+function repSave_(token, r) {
+  var c = requireAdminSession_(token); if (!c.ok) return c;
+  r = r || {};
+  var titre = String(r.titre || '').trim().slice(0, 200); if (!titre) return { ok: false, error: 'Le titre du rapport est obligatoire.' };
+  var params = JSON.stringify(r.params || {}); if (params.length > 45000) return { ok: false, error: 'Paramètres trop volumineux (45 000 caractères maximum).' };
+  var logo = String(r.logo || ''); if (logo && (!/^data:image\/(png|jpe?g|gif);base64,/i.test(logo) || logo.length > 45000)) return { ok: false, error: 'Logo trop volumineux ou format non pris en charge (PNG ou JPEG, 45 000 caractères maximum après réduction).' };
+  var carte = String(r.carte || ''), photo = String(r.photo || '');
+  if ((carte && (!/^data:image\/(png|jpe?g|gif);base64,/i.test(carte) || carte.length > 45000)) || (photo && (!/^data:image\/(png|jpe?g|gif);base64,/i.test(photo) || photo.length > 45000))) return { ok: false, error: 'Carte ou photo trop volumineuse (45 000 caractères maximum après réduction).' };
+  var figs = (r.figures || []).slice(0, 4), badFig = figs.some(function (f) { return !f || !/^data:image\/(png|jpe?g|gif);base64,/i.test(String(f.src || '')) || String(f.src).length > 45000; });
+  if (badFig) return { ok: false, error: 'Une figure est trop volumineuse ou n’est pas une image PNG/JPEG (45 000 caractères maximum après réduction).' };
+  var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd'T'HH:mm:ss");
+  var row = [r.id || newId_('R'), titre, r.niveau === 'hopital' ? 'hopital' : 'zone', String(r.structure || '').slice(0, 120), (r.periodes || []).join(','), (r.activites || []).join(','), (r.comparaison || []).join(','), params, r.statut === 'final' ? 'final' : 'brouillon', now, logo, carte, photo];
+  var sh = repSheet_(), v = sh.getDataRange().getValues(), at = -1;
+  for (var i = 1; i < v.length; i++) if (r.id && String(v[i][0]) === String(r.id)) at = i + 1;
+  if (at > 0) sh.getRange(at, 1, 1, RAP_HEADERS.length).setValues([row]); else sh.appendRow(row);
+  repFigSave_(row[0], figs);
+  return { ok: true, id: row[0], modifie: now };
+}
+function repDelete_(token, id) {
+  var c = requireAdminSession_(token); if (!c.ok) return c;
+  var sh = repSheet_(), v = sh.getDataRange().getValues();
+  for (var i = v.length - 1; i >= 1; i--) if (String(v[i][0]) === String(id)) sh.deleteRow(i + 1);
+  repFigSave_(id, []);
   return { ok: true };
 }
