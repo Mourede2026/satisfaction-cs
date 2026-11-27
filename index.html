@@ -151,7 +151,18 @@
           r.centres.map(function(c){ return '<tr><td>' + c.centre + (c.complet ? '<br><small style="color:#1a7f4b">✅ Score du centre atteint</small>' : '') + '</td><td>' + Object.keys(c.cibles).map(function(k){ var x = c.cibles[k]; return (LB[k] || k) + ' : ' + x.valides + ' faits par moi<br><small style="color:#6b7280">centre : ' + Math.min(x.centre, x.quota) + '/' + x.quota + '</small>'; }).join('<br>') + '</td><td class="n">' + c.montant + ' FCFA</td></tr>'; }).join('') +
           '</tbody></table><p class="hint">Gain à ce jour : <b>' + (r.gain || 0) + ' FCFA</b>. Votre total final dépend du nombre de centres que vous aurez faits : chaque centre complet rapporte ' + r.montantCentre + ' FCFA ; au-delà du quota, le surplus n\'est pas payé.</p>';
       }
-      box.innerHTML = '<h2>📊 Mon tableau de bord</h2>' + (per ? '<p class="hint">' + per + '</p>' : '') + '<table><thead><tr><th>Cible</th><th class="n">Validés</th><th class="n">Rejetés</th>' + (r.modeCentre ? '' : '<th class="n">Objectif</th><th class="n">Reste à atteindre</th>') + '</tr></thead><tbody>' + rows + '</tbody></table>' + (rules ? '<p class="hint">' + rules + '</p>' : '') + rj + ctr;
+      var telH = '';
+      if (r.tel) {
+        var T = r.tel, LBt = {usagers: 'Usagers', cogecs: 'COGECS', communaute: 'Communauté'}, fdt = function(v){ try { return v ? new Date(v).toLocaleString('fr-FR', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'}) : '—'; } catch (e) { return '—'; } };
+        var trows = Object.keys(T.byForm || {}).map(function(k){ var x = T.byForm[k]; return '<tr><td>' + (LBt[k] || k) + '</td><td class="n ok">' + x.valid + '</td><td class="n ko">' + x.rej + '</td></tr>'; }).join('');
+        var tctr = (T.centres || []).map(function(c){ return '<tr><td>' + c.centre + '</td><td>' + Object.keys(c.cibles || {}).map(function(k){ var x = c.cibles[k]; return (LBt[k] || k) + ' : ' + x.valid + ' / ' + x.total; }).join('<br>') + '</td></tr>'; }).join('');
+        telH = '<h2 style="margin-top:14px">📱 Ce téléphone' + (T.n ? ' (n° ' + T.n + ')' : '') + ' <small style="color:#6b7280">…' + T.code + '</small></h2>' +
+          '<p class="hint">Aujourd\'hui : <b>' + T.today.valid + '</b> validé(s)' + (T.today.rej ? ' · ' + T.today.rej + ' rejeté(s)' : '') + ' · Depuis le début : <b>' + T.valid + '</b> validé(s) sur ' + T.total + ' reçu(s)<br>Première saisie : ' + fdt(T.first) + ' · Dernière saisie : ' + fdt(T.last) + '</p>' +
+          (trows ? '<table><thead><tr><th>Cible</th><th class="n">Validés</th><th class="n">Rejetés</th></tr></thead><tbody>' + trows + '</tbody></table>' : '<p class="hint">Aucun questionnaire envoyé depuis ce téléphone.</p>') +
+          (tctr ? '<table><thead><tr><th>Centre</th><th>Validés / reçus</th></tr></thead><tbody>' + tctr + '</tbody></table>' : '') +
+          '<p class="hint">Si vous utilisez un autre téléphone, ses propres chiffres s\'afficheront sur celui-ci. Le tableau « Mon tableau de bord » ci-dessus regroupe tous vos téléphones.</p>';
+      }
+      box.innerHTML = '<h2>📊 Mon tableau de bord</h2>' + (per ? '<p class="hint">' + per + '</p>' : '') + '<table><thead><tr><th>Cible</th><th class="n">Validés</th><th class="n">Rejetés</th>' + (r.modeCentre ? '' : '<th class="n">Objectif</th><th class="n">Reste à atteindre</th>') + '</tr></thead><tbody>' + rows + '</tbody></table>' + (rules ? '<p class="hint">' + rules + '</p>' : '') + rj + ctr + telH;
     }
 
     function payBox(r){
