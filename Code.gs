@@ -1207,7 +1207,13 @@ function handleMyCounts(d) {
     var v = me ? (me.valid[f] || 0) : 0, r = me ? (me.rej[f] || 0) : 0, o = me && me.objByForm[f] !== undefined ? me.objByForm[f] : null;
     cibles[f] = { valides: v, rejetes: r, objectif: o, reste: o === null ? null : Math.max(0, o - v) };
   });
-  return { ok: true, appareil: appareil, momo: en.momo, paiement: pay ? { montant: pay.montant, date: pay.date, momo: pay.momo } : null, cibles: cibles, mins: c.mins, debut: act.debut || '', fin: act.fin || '', joursRestants: c.totalDays ? Math.max(0, c.totalDays - c.elapsed) : null,
+  // Chiffres de CE téléphone uniquement (l'identifiant envoyé par l'appareil est comparé à ses 4 derniers caractères, parmi les seuls téléphones de ce compte)
+  var tel = null, dv4 = String(d.dev || '').slice(-4);
+  if (me && dv4) {
+    (me.appareils || []).forEach(function (ap) { if (ap.code && ap.code === dv4) tel = { n: ap.n, code: ap.code, total: ap.total, valid: ap.valid, rej: ap.rej, first: ap.first, last: ap.last, byForm: ap.byForm || {}, today: ap.today || { total: 0, valid: 0, rej: 0 }, centres: [] }; });
+    if (tel) (me.appareilsCentres || []).forEach(function (ac) { if (ac.code === tel.code) tel.centres.push({ centre: ac.centre, cibles: ac.cibles }); });
+  }
+  return { ok: true, appareil: appareil, tel: tel, momo: en.momo, paiement: pay ? { montant: pay.montant, date: pay.date, momo: pay.momo } : null, cibles: cibles, mins: c.mins, debut: act.debut || '', fin: act.fin || '', joursRestants: c.totalDays ? Math.max(0, c.totalDays - c.elapsed) : null,
     rejDuree: me ? me.rejDuree : 0, rejInterv: me ? me.rejInterv : 0, rejPlafond: me ? me.rejPlafond : 0,
     quotas: c.quotas, montantCentre: c.mins.montantCentre, modeCentre: !!(c.mins.montantCentre > 0 && Object.keys(c.quotas).length), centres: me && me.centresDetail ? me.centresDetail : [], gain: me && me.centresDetail ? me.aPayer : null };
 }
@@ -1522,6 +1528,7 @@ function suiviCompute_(act) {
   });
   // Validation : durée de saisie ≥ minimum, et intervalle depuis la fin du questionnaire précédent du même enquêteur ≥ minimum.
   // Un questionnaire sans horodatage (anciennes réponses) ne peut pas être évalué : il reste valide.
+  var todayTel_ = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
   order.forEach(function (k) {
     var e = enq[k], its = (e.items || []).slice().sort(function (a, b) { return (isNaN(a.s) ? 0 : a.s) - (isNaN(b.s) ? 0 : b.s); }), prevEnd;
     e.valid = {}; e.rej = {}; e.rejDuree = 0; e.rejInterv = 0; e.rejPlafond = 0; e.centres = {}; e.centresAll = {}; var perDay = {}, devs = {}; prevEnd = {};
@@ -1550,6 +1557,8 @@ function suiviCompute_(act) {
         }
       }
       var di = devInfo[dkey]; di.total++; if (bad) di.rej++; else di.valid++; if (!isNaN(it.s) && (isNaN(di.first) || it.s < di.first)) di.first = it.s; if (!isNaN(it.e) && (isNaN(di.last) || it.e > di.last)) di.last = it.e;
+      var dbf = di.byForm = di.byForm || {}, dbx = dbf[it.f] = dbf[it.f] || { total: 0, valid: 0, rej: 0 }; dbx.total++; if (bad) dbx.rej++; else dbx.valid++;
+      if (!isNaN(it.s) && Utilities.formatDate(new Date(it.s), Session.getScriptTimeZone(), 'yyyy-MM-dd') === todayTel_) { var dtd = di.today = di.today || { total: 0, valid: 0, rej: 0 }; dtd.total++; if (bad) dtd.rej++; else dtd.valid++; }
       // Détail par téléphone, centre et cible (reçus / validés / rejetés)
       var tcKey = it.c || '?', tcLab = it.cl || '(centre non renseigné)';
       if (!telCen[dkey]) telCen[dkey] = {};
@@ -1568,7 +1577,7 @@ function suiviCompute_(act) {
     var known = devOrder.filter(function (k) { return k !== '?'; }).sort(function (x, y) { return (devInfo[x].first || 0) - (devInfo[y].first || 0); }), nn = 0;
     known.forEach(function (k) { devInfo[k].n = ++nn; });
     e.appareils = known.concat(devInfo['?'] ? ['?'] : []).map(function (k) {
-      var d = devInfo[k]; return { n: d.n, code: d.code ? String(d.code).slice(-4) : '', total: d.total, valid: d.valid, rej: d.rej, first: isNaN(d.first) ? '' : new Date(d.first).toISOString(), last: isNaN(d.last) ? '' : new Date(d.last).toISOString() };
+      var d = devInfo[k]; return { n: d.n, code: d.code ? String(d.code).slice(-4) : '', total: d.total, valid: d.valid, rej: d.rej, byForm: d.byForm || {}, today: d.today || { total: 0, valid: 0, rej: 0 }, first: isNaN(d.first) ? '' : new Date(d.first).toISOString(), last: isNaN(d.last) ? '' : new Date(d.last).toISOString() };
     });
     e.appareilsCentres = [];
     Object.keys(telCen).forEach(function (dk) {
