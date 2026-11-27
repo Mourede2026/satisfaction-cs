@@ -1,5 +1,5 @@
 // Configuration + accès enquêteur par code (un code par niveau : zone sanitaire / hôpital)
-const API_URL_DEFAULT = "https://script.google.com/macros/s/AKfycbwbFgMu71sQhLWfLZSo7_UKLkCzy1sNnfju0Z6o0q9EFubPmXC101fxpY125wP8NKu18w/exec";
+const API_URL_DEFAULT = "https://script.google.com/macros/s/AKfycbxY-sGm3CvMKZd8tt5vMWdVJ8TUROwU9Wctk0swuHOZUccfKz3wgt_c9o0Gpk2YzY3o/exec";
 // L'adresse du serveur peut être corrigée depuis la page Administration (stockée sur l'appareil)
 // Nouveau déploiement : si l'adresse d'origine a changé, on abandonne l'ancienne adresse corrigée à la main sur l'appareil
 (function () {

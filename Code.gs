@@ -1,4 +1,4 @@
-// URL du déploiement Apps Script (nouveau déploiement) : https://script.google.com/macros/s/AKfycbwbFgMu71sQhLWfLZSo7_UKLkCzy1sNnfju0Z6o0q9EFubPmXC101fxpY125wP8NKu18w/exec
+// URL du déploiement Apps Script (nouveau déploiement) : https://script.google.com/macros/s/AKfycbxY-sGm3CvMKZd8tt5vMWdVJ8TUROwU9Wctk0swuHOZUccfKz3wgt_c9o0Gpk2YzY3o/exec
 // Elle doit être identique à API_URL_DEFAULT dans config.js.
 /**
  * ENQUÊTES DE SATISFACTION - ZONES SANITAIRES DU BÉNIN — Backend Apps Script (API JSON)

@@ -1,6 +1,6 @@
 # Déploiement
 **URL du déploiement Apps Script actuel** (déjà intégrée dans `config.js`) :
-`https://script.google.com/macros/s/AKfycbwbFgMu71sQhLWfLZSo7_UKLkCzy1sNnfju0Z6o0q9EFubPmXC101fxpY125wP8NKu18w/exec`
+`https://script.google.com/macros/s/AKfycbxY-sGm3CvMKZd8tt5vMWdVJ8TUROwU9Wctk0swuHOZUccfKz3wgt_c9o0Gpk2YzY3o/exec`
 
 Après un redéploiement, les appareils qui avaient une adresse corrigée à la main depuis la page Administration reviennent automatiquement à cette adresse.
 
